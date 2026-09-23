@@ -82,3 +82,8 @@ class DecisionSnapshot:
     legal_actions: list[ActionOption]
     forced_switch: bool
     schema_version: int = 1
+    
+@dataclass(frozen=True, slots=True)
+class DecisionRecord:
+    decision: DecisionSnapshot
+    selected_action_id: str
