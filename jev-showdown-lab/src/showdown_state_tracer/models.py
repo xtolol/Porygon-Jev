@@ -87,3 +87,13 @@ class DecisionSnapshot:
 class DecisionRecord:
     decision: DecisionSnapshot
     selected_action_id: str
+    jev_selected_action_id: str
+    selection_source: Literal["jev", "random_fallback"]
+
+@dataclass(frozen=True)
+class PolicySelection:
+    action_id: str
+    probabilities: dict[str, float]
+    confidence: float | None
+    model: str
+    generation_id: str | None = None

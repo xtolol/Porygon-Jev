@@ -19,22 +19,74 @@ class TracingRandomPlayer(RandomPlayer):
         self.trace_writer = trace_writer
         self.random = random.Random(seed)
         
-    def choose_move(self, battle: Battle) -> int:
+    async def choose_move(self, battle: Battle):
         decision = battle_to_decision_snapshot(battle)
+
         if not decision.legal_actions:
-            raise ValueError("No legal actions available for the current battle state.")
-        
-        selected = self.random.choice(decision.legal_actions)
-        
+            raise ValueError(
+                "No legal actions available for the current battle state."
+            )
+
+        actions_by_id = {
+            action.id: action
+            for action in decision.legal_actions
+        }
+
+        try:
+            jev_selection = await self.selection_policy.select(
+                decision
+            )
+
+            if jev_selection.action_id not in actions_by_id:
+                raise ValueError(
+                    "Jev returned an unknown action ID: "
+                    f"{jev_selection.action_id}"
+                )
+
+            selected = actions_by_id[
+                jev_selection.action_id
+            ]
+            selection_source = "jev"
+
+            print(
+                "Jev selected:",
+                jev_selection.action_id,
+                "confidence:",
+                jev_selection.confidence,
+            )
+
+        except Exception as error:
+            print(
+                "Jev selection failed; using random fallback:",
+                error,
+            )
+
+            jev_selection = None
+            selected = self.random.choice(
+                decision.legal_actions
+            )
+            selection_source = "random_fallback"
+        print(
+        f"Selected action: {selected.id} "
+        f"| source: {selection_source}"
+)
+
         order = self._action_to_order(selected, battle)
-        
+
         record = DecisionRecord(
             decision=decision,
             selected_action_id=selected.id,
+            jev_selected_action_id=(
+                jev_selection.action_id
+                if jev_selection
+                else None
+            ),
+            # Add this field to DecisionRecord if it does not exist:
+            selection_source=selection_source,
         )
-        
+
         self.trace_writer.write(record)
-        
+
         return order
     
     def _action_to_order(self, action: ActionOption, battle: Battle):
