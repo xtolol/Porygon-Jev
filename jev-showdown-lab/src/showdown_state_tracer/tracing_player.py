@@ -14,6 +14,7 @@ from showdown_state_tracer.telemetry import (
 )
 
 class TracingRandomPlayer(RandomPlayer):
+<<<<<<< HEAD
     def __init__(self, trace_writer: Telemetry, seed: int | None = None, **player_options,) -> None:
         super().__init__(**player_options)
         self.trace_writer = trace_writer
@@ -32,10 +33,24 @@ class TracingRandomPlayer(RandomPlayer):
             for action in decision.legal_actions
         }
 
+=======
+    def __init__(self, trace_writer: Telemetry, selection_policy, seed: int | None = None, **player_options,) -> None:
+        super().__init__(**player_options)
+        self.trace_writer = trace_writer
+        self.random = random.Random(seed)
+        self.selection_policy = selection_policy
+        
+    async def choose_move(self, battle: Battle) -> int:
+        decision = battle_to_decision_snapshot(battle)
+        if not decision.legal_actions:
+            raise ValueError("No legal actions available for the current battle state.")
+        
+>>>>>>> d3e1e9c ((feat): Jev chosen moves for a Showdown Agent (Gen 9 Randbats))
         try:
             jev_selection = await self.selection_policy.select(
                 decision
             )
+<<<<<<< HEAD
 
             if jev_selection.action_id not in actions_by_id:
                 raise ValueError(
@@ -87,6 +102,30 @@ class TracingRandomPlayer(RandomPlayer):
 
         self.trace_writer.write(record)
 
+=======
+            print(
+            "Jev selected:",
+            jev_selection.action_id,
+            "confidence:",
+            jev_selection.confidence,
+            )
+        except Exception as error:
+            print("Jev selection failed:", error)
+            jev_selection = None
+
+        selected = self.random.choice(decision.legal_actions)
+        
+        order = self._action_to_order(selected, battle)
+        
+        record = DecisionRecord(
+            decision=decision,
+            selected_action_id=selected.id,
+            jev_selected_action_id=jev_selection.action_id if jev_selection else None,
+        )
+        
+        self.trace_writer.write(record)
+        
+>>>>>>> d3e1e9c ((feat): Jev chosen moves for a Showdown Agent (Gen 9 Randbats))
         return order
     
     def _action_to_order(self, action: ActionOption, battle: Battle):

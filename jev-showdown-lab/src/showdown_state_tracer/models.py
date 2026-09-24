@@ -88,7 +88,10 @@ class DecisionRecord:
     decision: DecisionSnapshot
     selected_action_id: str
     jev_selected_action_id: str
+<<<<<<< HEAD
     selection_source: Literal["jev", "random_fallback"]
+=======
+>>>>>>> d3e1e9c ((feat): Jev chosen moves for a Showdown Agent (Gen 9 Randbats))
 
 @dataclass(frozen=True)
 class PolicySelection:
@@ -96,4 +99,8 @@ class PolicySelection:
     probabilities: dict[str, float]
     confidence: float | None
     model: str
+<<<<<<< HEAD
     generation_id: str | None = None
+=======
+    generation_id: str | None = None
+>>>>>>> d3e1e9c ((feat): Jev chosen moves for a Showdown Agent (Gen 9 Randbats))
