@@ -3,6 +3,7 @@ import os
 from dataclasses import asdict
 import asyncio
 import time
+import random
 
 import httpx
 
@@ -37,54 +38,75 @@ class JevSelectionPolicy:
         self._request_lock = asyncio.Lock()
         self._next_request_time = 0.0
 
-    async def _send_request(
+    async def _send_until_success(
     self,
     payload: dict,
 ) -> httpx.Response:
+        attempt = 0
         async with self._request_lock:
-            remaining_delay = (
-                self._next_request_time - time.monotonic()
-            )
+            while True:
+                attempt += 1
 
-            if remaining_delay > 0:
-                await asyncio.sleep(remaining_delay)
+                try:
+                    response = await self._client.post(
+                        self.ENDPOINT,
+                        json=payload,
+                    )
 
-            response = await self._client.post(
-                self.ENDPOINT,
-                json=payload,
-            )
+                except httpx.TransportError as error:
+                    response = None
+                    print(
+                        f"Jev transport failure on attempt "
+                        f"{attempt}: {error}"
+                    )
 
-            self._next_request_time = (
-                time.monotonic() + self._min_request_interval
-            )
+                if response is not None and response.is_success:
+                    print(f"Jev succeeded on attempt {attempt}")
+                    return response
 
-            if response.status_code != 429:
-                response.raise_for_status()
-                return response
+                if (
+                    response is not None
+                    and response.status_code
+                    not in {429, 502, 503, 504}
+                ):
+                    response.raise_for_status()
 
-            retry_header = response.headers.get("Retry-After")
+                retry_after = (
+                    response.headers.get("Retry-After")
+                    if response is not None
+                    else None
+                )
 
-            try:
-                retry_delay = float(retry_header)
-            except (TypeError, ValueError):
-                retry_delay = self._min_request_interval
+                try:
+                    server_delay = float(retry_after)
+                except (TypeError, ValueError):
+                    server_delay = 0.0
 
-            if retry_delay > self._max_retry_wait:
-                response.raise_for_status()
+                backoff = min(
+                    2 ** min(attempt - 1, 6),
+                    60.0,
+                )
 
-            await asyncio.sleep(retry_delay)
+                delay = max(
+                    server_delay,
+                    backoff,
+                    self._min_request_interval,
+                )
 
-            response = await self._client.post(
-                self.ENDPOINT,
-                json=payload,
-            )
+                delay += random.uniform(0.0, 1.0)
 
-            self._next_request_time = (
-                time.monotonic() + self._min_request_interval
-            )
+                status = (
+                    response.status_code
+                    if response is not None
+                    else "network error"
+                )
 
-            response.raise_for_status()
-            return response
+                print(
+                    f"Jev attempt {attempt} returned {status}; "
+                    f"waiting {delay:.1f}s"
+                )
+
+                await asyncio.sleep(delay)
 
     async def select(
         self,
