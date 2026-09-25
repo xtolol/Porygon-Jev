@@ -146,7 +146,7 @@ class JevSelectionPolicy:
             },
         }
 
-        response = await self._send_request(payload)
+        response = await self._send_until_success(payload)
 
         response_data = response.json()
         answer = response_data["answers"]["action"]

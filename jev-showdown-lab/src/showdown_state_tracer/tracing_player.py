@@ -22,6 +22,7 @@ class TracingRandomPlayer(RandomPlayer):
         
     async def choose_move(self, battle: Battle) -> int:
         decision = battle_to_decision_snapshot(battle)
+        actions_by_id = {action.id: action for action in decision.legal_actions}
         if not decision.legal_actions:
             raise ValueError("No legal actions available for the current battle state.")
         
@@ -29,12 +30,15 @@ class TracingRandomPlayer(RandomPlayer):
             jev_selection = await self.selection_policy.select(
                 decision
             )
+            
+            selected = actions_by_id[jev_selection.action_id]
             print(
             "Jev selected:",
             jev_selection.action_id,
             "confidence:",
             jev_selection.confidence,
             )
+            selection_source = "jev"
         except Exception as error:
             print("Jev selection failed:", error)
             jev_selection = None
