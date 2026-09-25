@@ -62,7 +62,13 @@ class BattleSnapshot:
     
     finished: bool
     won: bool | None  # True if we won, False if we lost, None if battle is ongoing
-    
+
+@dataclass(frozen=True)
+class MoveEffectiveness:
+    receives_stab: bool | None
+    effectiveness_multiplier: float | None
+    effectiveness_label: str | None
+
     
 @dataclass(frozen=True, slots=True)
 class ActionOption:
@@ -72,6 +78,7 @@ class ActionOption:
     type: Literal["move", "switch", "default"]
     move: MoveSnapshot | None = None
     switch: PokemonSnapshot | None = None
+    move_effectiveness: MoveEffectiveness | None = None
     
 
 @dataclass(frozen=True, slots=True)
@@ -85,10 +92,21 @@ class DecisionSnapshot:
     
 @dataclass(frozen=True, slots=True)
 class DecisionRecord:
+    battle_id: str
+    decision_number: int
+    turn: int
+
     decision: DecisionSnapshot
     selected_action_id: str
     jev_selected_action_id: str
     selection_source: Literal["random", "jev"] 
+
+    jev_model: str | None
+    jev_confidence: float | None
+    jev_probabilities: dict[str, float] | None
+
+    selected_probability: float | None
+    probability_margin: float | None  # difference between top two probabilities
 
 @dataclass(frozen=True)
 class PolicySelection:

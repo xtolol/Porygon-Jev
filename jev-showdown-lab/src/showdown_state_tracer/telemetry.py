@@ -1,23 +1,38 @@
-import json
 from dataclasses import asdict
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 
-from showdown_state_tracer.models import DecisionSnapshot
+from showdown_state_tracer.models import DecisionRecord
+
 
 class Telemetry:
     def __init__(self, path: Path) -> None:
         self.path = path
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        
+        self.path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
     def write(
         self,
-        snapshot: DecisionSnapshot,) -> None:
-        record = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "decision": asdict(snapshot),
+        decision_record: DecisionRecord,
+    ) -> None:
+        payload = {
+            "schema_version": 2,
+            "timestamp": datetime.now(
+                timezone.utc
+            ).isoformat(),
+            **asdict(decision_record),
         }
-        
-        with self.path.open("a", encoding="utf-8") as f:
-            json.dump(record, f, ensure_ascii=False)
-            f.write("\n")
+
+        with self.path.open(
+            "a",
+            encoding="utf-8",
+        ) as file:
+            json.dump(
+                payload,
+                file,
+                ensure_ascii=False,
+            )
+            file.write("\n")

@@ -1,10 +1,52 @@
 from poke_env.battle import Move
 from poke_env.battle.pokemon import Pokemon
-from showdown_state_tracer.models import MoveSnapshot, PokemonSnapshot, FieldSnapshot, BattleSnapshot, ActionOption, DecisionSnapshot
+from showdown_state_tracer.models import MoveSnapshot, PokemonSnapshot, FieldSnapshot, BattleSnapshot, ActionOption, DecisionSnapshot, MoveEffectiveness
 from enum import Enum
 from collections.abc import Mapping
 from poke_env.battle import Battle
 
+def effectiveness_label(multiplier: float) -> str:
+    if multiplier == 0:
+        return "immune"
+    if multiplier < 0.5:
+        return "strongly resisted"
+    if multiplier == 0.5:
+        return "resisted"
+    if multiplier == 1:
+        return "neutral"
+    if multiplier == 2:
+        return "super effective"
+    if multiplier >= 4:
+        return "four-times super effective"
+
+    return f"{multiplier}x effectiveness"
+
+def move_to_effectiveness(move: Move, battle: Battle) -> MoveEffectiveness:
+    
+    our_active = battle.active_pokemon
+    opponent_active = battle.opponent_active_pokemon
+
+    if move.category.name == "STATUS":
+        return MoveEffectiveness(
+            receives_stab=None,
+            effectiveness_multiplier=None,
+            effectiveness_label="not applicable to status moves"
+        )
+        
+
+    if move.type in our_active.types:
+        receives_stab = True
+    else:
+        receives_stab = False
+
+    multiplier = opponent_active.damage_multiplier(move)
+    multiplier_label = effectiveness_label(multiplier)
+
+    return MoveEffectiveness(
+        receives_stab=receives_stab,
+        effectiveness_multiplier=multiplier,
+        effectiveness_label=multiplier_label
+    )
 
 def _snapshot_to_dict(effects: Mapping[Enum, int]) -> dict[str, int]:
     return {
@@ -78,7 +120,8 @@ def battle_to_action_option(battle: Battle,) -> list[ActionOption]:
                 id=f"move:{index}:{move.id}",
                 type="move",
                 move=move_to_snapshot(move),
-                switch=None
+                switch=None,
+                move_effectiveness=move_to_effectiveness(move, battle)
             )
         )
     
@@ -88,7 +131,8 @@ def battle_to_action_option(battle: Battle,) -> list[ActionOption]:
                 id=f"switch:{index}:{pokemon.species}",
                 type="switch",
                 move=None,
-                switch=pokemon_to_snapshot(pokemon)
+                switch=pokemon_to_snapshot(pokemon),
+                move_effectiveness=None
             )
         )
     return actions

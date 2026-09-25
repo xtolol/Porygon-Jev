@@ -131,6 +131,7 @@ class JevSelectionPolicy:
             for label, action in option_lookup.items()
         }
 
+
         payload = {
             "model": self.MODEL,
             "state": asdict(decision.state),
@@ -138,8 +139,10 @@ class JevSelectionPolicy:
                 "action": {
                     "type": "choice",
                     "instructions": (
-                        "Choose the legal action that best improves the "
-                        "player's expected chance of winning."
+                        "Choose the legal action that best improves the player's chance"
+                        " of winning. For damaging moves, consider the supplied type-effectiveness"
+                        " multiplier and whether the move receives STAB. Do not assume that base"
+                        " power alone determines the best action."
                     ),
                     "criteria": criteria,
                 }

@@ -1,5 +1,6 @@
 from poke_env.battle import Battle
 from poke_env.player import RandomPlayer
+from collections import defaultdict
 
 from showdown_state_tracer.models import ActionOption, DecisionRecord
 
@@ -19,9 +20,15 @@ class TracingRandomPlayer(RandomPlayer):
         self.trace_writer = trace_writer
         self.random = random.Random(seed)
         self.selection_policy = selection_policy
+        self._decision_counts: dict[str, int] = defaultdict(int)
         
     async def choose_move(self, battle: Battle) -> int:
         decision = battle_to_decision_snapshot(battle)
+        battle_id = battle.battle_tag
+
+        self._decision_counts[battle_id] += 1
+        decision_number = self._decision_counts[battle_id]
+        
         actions_by_id = {action.id: action for action in decision.legal_actions}
         if not decision.legal_actions:
             raise ValueError("No legal actions available for the current battle state.")
@@ -48,12 +55,53 @@ class TracingRandomPlayer(RandomPlayer):
             selection_source = "random_fallback"
 
         order = self._action_to_order(selected, battle)
-        
+
+        probabilities = jev_selection.probabilities
+
+        selected_probability = probabilities.get(
+            selected.id
+        )
+
+        ranked_probabilities = sorted(
+            probabilities.values(),
+            reverse=True,
+        )
+
+        probability_margin = (
+            ranked_probabilities[0] - ranked_probabilities[1]
+            if len(ranked_probabilities) >= 2
+            else 1.0
+        )
+
         record = DecisionRecord(
-            decision=decision,
-            selected_action_id=selected.id,
-            jev_selected_action_id=jev_selection.action_id if jev_selection else None,
-            selection_source=selection_source,
+        battle_id=battle.battle_tag,
+        turn=battle.turn,
+        decision_number=decision_number,
+        decision=decision,
+        selected_action_id=selected.id,
+        jev_selected_action_id=(
+            jev_selection.action_id
+            if jev_selection
+            else None
+        ),
+        selection_source=selection_source,
+        jev_model=(
+            jev_selection.model
+            if jev_selection
+            else None
+        ),
+        jev_confidence=(
+            jev_selection.confidence
+            if jev_selection
+            else None
+        ),
+        jev_probabilities=(
+            jev_selection.probabilities
+            if jev_selection
+            else None
+        ),
+        selected_probability=selected_probability,
+        probability_margin=probability_margin,
         )
         
         self.trace_writer.write(record)
