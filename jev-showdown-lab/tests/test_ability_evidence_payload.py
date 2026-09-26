@@ -16,6 +16,7 @@ def pokemon(species, ability=None):
         types=[], species=species, level=100, item=None, ability=ability,
         status=None, moves={}, current_hp_fraction=1.0, boosts={}, active=True,
         fainted=False, revealed=True, damage_multiplier=lambda move: 1.0,
+        stats={}, base_stats={"atk": 90, "def": 90, "spa": 90, "spd": 90},
     )
 
 
@@ -23,7 +24,7 @@ def decision_for(ability):
     ours = pokemon("Ursaluna")
     opponent = pokemon("Electrode", ability)
     battle = SimpleNamespace(
-        battle_tag="battle-soundproof", format="gen9randombattle", turn=5,
+        battle_tag="battle-soundproof", format="gen9randombattle", turn=5, gen=9,
         active_pokemon=ours, team={"p1: Ursaluna": ours},
         opponent_active_pokemon=opponent, opponent_team={"p2: Electrode": opponent},
         weather={}, fields={}, side_conditions={}, opponent_side_conditions={},

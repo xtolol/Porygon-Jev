@@ -174,6 +174,12 @@ class JevSelectionPolicy:
                         " move's move_flags and ignore_ability. These are evidence,"
                         " not a guaranteed ability interaction calculation. An unknown"
                         " ability or missing flag does not establish that a move is safe."
+                        " Damage estimates with source poke_env_gen9 are conditional"
+                        " on recorded inputs and describe damage only if the move hits;"
+                        " they do not include hit chance or the opponent's action."
+                        " A relative_power score is only for comparing ordinary moves"
+                        " against this same target, not an HP percentage or KO chance."
+                        " Read assumptions and treat unknown KO outlook as unknown."
                     ),
                     "criteria": criteria,
                 }

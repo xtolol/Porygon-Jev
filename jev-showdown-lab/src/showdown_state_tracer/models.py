@@ -74,6 +74,18 @@ class MoveEffectiveness:
     effectiveness_multiplier: float | None
     effectiveness_label: str | None
 
+
+@dataclass(frozen=True, slots=True)
+class DamageEstimate:
+    # On-hit damage as a fraction of the target's maximum HP, when calculable.
+    min_hp_fraction: float | None
+    max_hp_fraction: float | None
+    on_hit_ko_outlook: Literal["guaranteed", "possible", "unlikely", "unknown"]
+    # Unitless comparison across ordinary moves against the same target only.
+    relative_power: float | None
+    source: Literal["poke_env_gen9", "relative_power", "unavailable"]
+    assumptions: list[str]
+
     
 @dataclass(frozen=True, slots=True)
 class ActionOption:
@@ -84,6 +96,7 @@ class ActionOption:
     move: MoveSnapshot | None = None
     switch: PokemonSnapshot | None = None
     move_effectiveness: MoveEffectiveness | None = None
+    damage_estimate: DamageEstimate | None = None
 
 
 ActionOutcome = Literal[
@@ -116,7 +129,7 @@ class DecisionSnapshot:
     legal_actions: list[ActionOption]
     forced_switch: bool
     recent_actions: list[ActionMemorySnapshot] = field(default_factory=list)
-    schema_version: int = 4
+    schema_version: int = 5
     
 @dataclass(frozen=True, slots=True)
 class DecisionRecord:
