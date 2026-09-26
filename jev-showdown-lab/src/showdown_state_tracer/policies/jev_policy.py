@@ -4,6 +4,8 @@ from dataclasses import asdict
 import asyncio
 import time
 import random
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 import httpx
 
@@ -17,7 +19,9 @@ class JevSelectionPolicy:
     ENDPOINT = "https://ai-gateway.vercel.sh/v1/evaluate"
     MODEL = "typesafe-ai/jev"
 
-    def __init__(self, min_request_interval: float = 3.0, max_retry_wait: float = 5.0,) -> None:
+    def __init__(
+        self, min_request_interval: float = 10.0, max_retry_wait: float = 120.0
+    ) -> None:
         api_key = os.getenv("AI_GATEWAY_API_KEY")
 
         if not api_key:
@@ -38,6 +42,21 @@ class JevSelectionPolicy:
         self._request_lock = asyncio.Lock()
         self._next_request_time = 0.0
 
+    @staticmethod
+    def _retry_after_seconds(value: str | None) -> float:
+        if value is None:
+            return 0.0
+        try:
+            return max(0.0, float(value))
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(value)
+            except (TypeError, ValueError):
+                return 0.0
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            return max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+
     async def _send_until_success(
     self,
     payload: dict,
@@ -45,6 +64,12 @@ class JevSelectionPolicy:
         attempt = 0
         async with self._request_lock:
             while True:
+                wait = self._next_request_time - time.monotonic()
+                if wait > 0:
+                    await asyncio.sleep(wait)
+
+                # Set the next start time for every attempt, including retries.
+                self._next_request_time = time.monotonic() + self._min_request_interval
                 attempt += 1
 
                 try:
@@ -71,29 +96,23 @@ class JevSelectionPolicy:
                 ):
                     response.raise_for_status()
 
-                retry_after = (
+                server_delay = self._retry_after_seconds(
                     response.headers.get("Retry-After")
                     if response is not None
                     else None
                 )
-
-                try:
-                    server_delay = float(retry_after)
-                except (TypeError, ValueError):
-                    server_delay = 0.0
-
+                base_delay = (
+                    15.0
+                    if response is not None and response.status_code == 429
+                    else 2.0
+                )
                 backoff = min(
-                    2 ** min(attempt - 1, 6),
-                    60.0,
+                    base_delay * 2 ** min(attempt - 1, 7), self._max_retry_wait
                 )
-
-                delay = max(
-                    server_delay,
-                    backoff,
-                    self._min_request_interval,
+                delay = max(server_delay, backoff) + random.uniform(0.0, 1.0)
+                self._next_request_time = max(
+                    self._next_request_time, time.monotonic() + delay
                 )
-
-                delay += random.uniform(0.0, 1.0)
 
                 status = (
                     response.status_code
@@ -103,10 +122,9 @@ class JevSelectionPolicy:
 
                 print(
                     f"Jev attempt {attempt} returned {status}; "
-                    f"waiting {delay:.1f}s"
+                    f"next attempt in at least "
+                    f"{self._next_request_time - time.monotonic():.1f}s"
                 )
-
-                await asyncio.sleep(delay)
 
     async def select(
         self,
