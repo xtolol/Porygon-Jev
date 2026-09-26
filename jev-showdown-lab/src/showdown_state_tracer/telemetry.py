@@ -19,7 +19,7 @@ class Telemetry:
         decision_record: DecisionRecord,
     ) -> None:
         payload = {
-            "schema_version": 2,
+            "schema_version": 3,
             "timestamp": datetime.now(
                 timezone.utc
             ).isoformat(),

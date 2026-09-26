@@ -2,6 +2,7 @@ from poke_env.battle import Battle
 from poke_env.player import RandomPlayer
 from collections import defaultdict
 
+from showdown_state_tracer.battle_memory import BattleMemory
 from showdown_state_tracer.models import ActionOption, DecisionRecord
 
 import random
@@ -21,10 +22,14 @@ class TracingRandomPlayer(RandomPlayer):
         self.random = random.Random(seed)
         self.selection_policy = selection_policy
         self._decision_counts: dict[str, int] = defaultdict(int)
+        self._memory = BattleMemory()
         
     async def choose_move(self, battle: Battle) -> int:
-        decision = battle_to_decision_snapshot(battle)
         battle_id = battle.battle_tag
+        self._memory.resolve(battle)
+        decision = battle_to_decision_snapshot(
+            battle, recent_actions=self._memory.recent_actions(battle_id)
+        )
 
         self._decision_counts[battle_id] += 1
         decision_number = self._decision_counts[battle_id]
@@ -55,8 +60,9 @@ class TracingRandomPlayer(RandomPlayer):
             selection_source = "random_fallback"
 
         order = self._action_to_order(selected, battle)
+        self._memory.remember(battle, selected)
 
-        probabilities = jev_selection.probabilities
+        probabilities = jev_selection.probabilities if jev_selection else {}
 
         selected_probability = probabilities.get(
             selected.id
@@ -70,7 +76,7 @@ class TracingRandomPlayer(RandomPlayer):
         probability_margin = (
             ranked_probabilities[0] - ranked_probabilities[1]
             if len(ranked_probabilities) >= 2
-            else 1.0
+            else (1.0 if ranked_probabilities else None)
         )
 
         record = DecisionRecord(
@@ -107,6 +113,11 @@ class TracingRandomPlayer(RandomPlayer):
         self.trace_writer.write(record)
         
         return order
+
+    def _battle_finished_callback(self, battle: Battle) -> None:
+        self._memory.clear(battle.battle_tag)
+        self._decision_counts.pop(battle.battle_tag, None)
+        super()._battle_finished_callback(battle)
     
     def _action_to_order(self, action: ActionOption, battle: Battle):
         _, index_text, _ = action.id.split(":", maxsplit=2)

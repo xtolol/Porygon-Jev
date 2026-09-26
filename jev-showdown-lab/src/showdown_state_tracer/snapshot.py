@@ -1,6 +1,6 @@
 from poke_env.battle import Move
 from poke_env.battle.pokemon import Pokemon
-from showdown_state_tracer.models import MoveSnapshot, PokemonSnapshot, FieldSnapshot, BattleSnapshot, ActionOption, DecisionSnapshot, MoveEffectiveness
+from showdown_state_tracer.models import MoveSnapshot, PokemonSnapshot, FieldSnapshot, BattleSnapshot, ActionOption, DecisionSnapshot, MoveEffectiveness, ActionMemorySnapshot
 from enum import Enum
 from collections.abc import Mapping
 from poke_env.battle import Battle
@@ -137,10 +137,13 @@ def battle_to_action_option(battle: Battle,) -> list[ActionOption]:
         )
     return actions
 
-def battle_to_decision_snapshot(battle: Battle) -> DecisionSnapshot:
+def battle_to_decision_snapshot(
+    battle: Battle, recent_actions: list[ActionMemorySnapshot] | None = None
+) -> DecisionSnapshot:
     return DecisionSnapshot(
         state=battle_to_snapshot(battle),
         legal_actions=battle_to_action_option(battle),
-        forced_switch=battle.force_switch
+        forced_switch=battle.force_switch,
+        recent_actions=list(recent_actions) if recent_actions is not None else [],
     )
     
