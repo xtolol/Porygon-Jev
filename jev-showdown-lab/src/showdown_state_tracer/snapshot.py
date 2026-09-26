@@ -75,6 +75,8 @@ def move_to_snapshot(move: Move) -> MoveSnapshot:
         self_boosts=self_boosts,
         heal_fraction=move.heal,
         inflicted_status=move.status.name if move.status is not None else None,
+        move_flags=sorted(move.flags),
+        ignore_ability=move.ignore_ability,
         target=move.target.name if move.target is not None else None
     )
     

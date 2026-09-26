@@ -21,6 +21,8 @@ class MoveSnapshot:
     self_boosts: dict[str, int] | None = None  # boosts to the user, including self-target moves
     heal_fraction: float | None = None  # fraction of max HP restored to the user
     inflicted_status: str | None = None  # primary status effect, if any
+    move_flags: list[str] = field(default_factory=list)
+    ignore_ability: bool = False
     
     is_protect_move: bool = False
 
@@ -114,7 +116,7 @@ class DecisionSnapshot:
     legal_actions: list[ActionOption]
     forced_switch: bool
     recent_actions: list[ActionMemorySnapshot] = field(default_factory=list)
-    schema_version: int = 3
+    schema_version: int = 4
     
 @dataclass(frozen=True, slots=True)
 class DecisionRecord:
