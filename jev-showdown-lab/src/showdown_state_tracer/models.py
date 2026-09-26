@@ -17,7 +17,10 @@ class MoveSnapshot:
     target: str | None
     current_pp: int | None = None
     max_pp: int | None = None
-    boosts: dict[str, int] | None = None  # stat boosts, e.g. {"atk": 1, "def": -1}
+    boosts: dict[str, int] | None = None  # poke-env primary boosts; recipient follows target
+    self_boosts: dict[str, int] | None = None  # boosts to the user, including self-target moves
+    heal_fraction: float | None = None  # fraction of max HP restored to the user
+    inflicted_status: str | None = None  # primary status effect, if any
     
     is_protect_move: bool = False
 
@@ -111,7 +114,7 @@ class DecisionSnapshot:
     legal_actions: list[ActionOption]
     forced_switch: bool
     recent_actions: list[ActionMemorySnapshot] = field(default_factory=list)
-    schema_version: int = 2
+    schema_version: int = 3
     
 @dataclass(frozen=True, slots=True)
 class DecisionRecord:
