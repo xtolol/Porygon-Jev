@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "showdown-state-tracer"
-version = "0.1.0"
+version = "0.2.0"
 description = "A library to trace the state of Pokémon Showdown battles."
 requires-python = ">=3.12, <3.14"
 dependencies = [
