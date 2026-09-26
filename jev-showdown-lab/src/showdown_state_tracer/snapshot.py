@@ -4,6 +4,7 @@ from showdown_state_tracer.models import MoveSnapshot, PokemonSnapshot, FieldSna
 from enum import Enum
 from collections.abc import Mapping
 from poke_env.battle import Battle
+from showdown_state_tracer.damage_estimation import estimate_damage
 
 def effectiveness_label(multiplier: float) -> str:
     if multiplier == 0:
@@ -125,13 +126,15 @@ def battle_to_action_option(battle: Battle,) -> list[ActionOption]:
     actions: list[ActionOption] = []
     
     for index, move in enumerate(battle.available_moves):
+        matchup = move_to_effectiveness(move, battle)
         actions.append(
             ActionOption(
                 id=f"move:{index}:{move.id}",
                 type="move",
                 move=move_to_snapshot(move),
                 switch=None,
-                move_effectiveness=move_to_effectiveness(move, battle)
+                move_effectiveness=matchup,
+                damage_estimate=estimate_damage(move, battle, matchup),
             )
         )
     
