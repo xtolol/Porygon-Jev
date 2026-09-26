@@ -1,6 +1,6 @@
 # Data models for traced battle states
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 @dataclass(frozen=True, slots=True)
@@ -79,7 +79,29 @@ class ActionOption:
     move: MoveSnapshot | None = None
     switch: PokemonSnapshot | None = None
     move_effectiveness: MoveEffectiveness | None = None
-    
+
+
+ActionOutcome = Literal[
+    "damage_observed",
+    "no_net_damage_observed",
+    "target_recovered",
+    "target_unavailable",
+    "switch_selected",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class ActionMemorySnapshot:
+    turn: int
+    action_id: str
+    actor_species: str | None
+    target_species: str | None
+    target_hp_before: float | None
+    target_hp_after: float | None
+    damage_fraction: float | None
+    outcome: ActionOutcome
+    known_target_ability: str | None
+
 
 @dataclass(frozen=True, slots=True)
 class DecisionSnapshot:
@@ -88,7 +110,8 @@ class DecisionSnapshot:
     state: BattleSnapshot
     legal_actions: list[ActionOption]
     forced_switch: bool
-    schema_version: int = 1
+    recent_actions: list[ActionMemorySnapshot] = field(default_factory=list)
+    schema_version: int = 2
     
 @dataclass(frozen=True, slots=True)
 class DecisionRecord:
@@ -98,8 +121,8 @@ class DecisionRecord:
 
     decision: DecisionSnapshot
     selected_action_id: str
-    jev_selected_action_id: str
-    selection_source: Literal["random", "jev"] 
+    jev_selected_action_id: str | None
+    selection_source: Literal["jev", "random_fallback"]
 
     jev_model: str | None
     jev_confidence: float | None

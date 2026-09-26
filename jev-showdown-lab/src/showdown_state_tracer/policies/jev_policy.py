@@ -134,7 +134,10 @@ class JevSelectionPolicy:
 
         payload = {
             "model": self.MODEL,
-            "state": asdict(decision.state),
+            "state": {
+                **asdict(decision.state),
+                "recent_actions": [asdict(action) for action in decision.recent_actions],
+            },
             "questions": {
                 "action": {
                     "type": "choice",
@@ -142,7 +145,10 @@ class JevSelectionPolicy:
                         "Choose the legal action that best improves the player's chance"
                         " of winning. For damaging moves, consider the supplied type-effectiveness"
                         " multiplier and whether the move receives STAB. Do not assume that base"
-                        " power alone determines the best action."
+                        " power alone determines the best action. Consider recent_actions"
+                        " for repeated lack of observed progress against the same target."
+                        " Unchanged HP does not prove immunity: the move may have missed,"
+                        " been blocked, or been offset by healing."
                     ),
                     "criteria": criteria,
                 }
