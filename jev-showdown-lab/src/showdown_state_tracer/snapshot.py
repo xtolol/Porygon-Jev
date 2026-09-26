@@ -55,6 +55,11 @@ def _snapshot_to_dict(effects: Mapping[Enum, int]) -> dict[str, int]:
         )
     }
 def move_to_snapshot(move: Move) -> MoveSnapshot:
+    # poke-env puts Calm Mind's boosts in boosts (target SELF), but Close
+    # Combat's self penalties in self_boost (target NORMAL).
+    self_boosts = move.self_boost
+    if move.target is not None and move.target.name == "SELF" and move.boosts:
+        self_boosts = {**move.boosts, **(self_boosts or {})}
     return MoveSnapshot(
         id=move.id,
         name=move.entry.get("name", move.id),
@@ -67,6 +72,11 @@ def move_to_snapshot(move: Move) -> MoveSnapshot:
         max_pp=move.max_pp,
         is_protect_move=move.is_protect_move,
         boosts=move.boosts,
+        self_boosts=self_boosts,
+        heal_fraction=move.heal,
+        inflicted_status=move.status.name if move.status is not None else None,
+        move_flags=sorted(move.flags),
+        ignore_ability=move.ignore_ability,
         target=move.target.name if move.target is not None else None
     )
     

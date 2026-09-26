@@ -166,7 +166,14 @@ class JevSelectionPolicy:
                         " power alone determines the best action. Consider recent_actions"
                         " for repeated lack of observed progress against the same target."
                         " Unchanged HP does not prove immunity: the move may have missed,"
-                        " been blocked, or been offset by healing."
+                        " been blocked, or been offset by healing. For utility moves,"
+                        " consider self_boosts, heal_fraction and inflicted_status."
+                        " The raw boosts field follows the move target and can apply"
+                        " to the user or the opponent."
+                        " Consider the opponent's revealed ability together with each"
+                        " move's move_flags and ignore_ability. These are evidence,"
+                        " not a guaranteed ability interaction calculation. An unknown"
+                        " ability or missing flag does not establish that a move is safe."
                     ),
                     "criteria": criteria,
                 }
