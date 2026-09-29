@@ -4,6 +4,7 @@ from showdown_state_tracer.models import MoveSnapshot, PokemonSnapshot, FieldSna
 from enum import Enum
 from collections.abc import Mapping
 from poke_env.battle import Battle
+from showdown_state_tracer.switch_context import annotate_switch
 
 def effectiveness_label(multiplier: float) -> str:
     if multiplier == 0:
@@ -121,8 +122,14 @@ def battle_to_snapshot(battle: Battle) -> BattleSnapshot:
         won=battle.won,
     )
     
-def battle_to_action_option(battle: Battle,) -> list[ActionOption]:
+def battle_to_action_option(
+    battle: Battle,
+    state: BattleSnapshot | None = None,
+    recent_actions: list[ActionMemorySnapshot] | None = None,
+) -> list[ActionOption]:
     actions: list[ActionOption] = []
+    if state is None:
+        state = battle_to_snapshot(battle)
     
     for index, move in enumerate(battle.available_moves):
         actions.append(
@@ -136,13 +143,18 @@ def battle_to_action_option(battle: Battle,) -> list[ActionOption]:
         )
     
     for index, pokemon in enumerate(battle.available_switches):
+        candidate = pokemon_to_snapshot(pokemon)
         actions.append(
             ActionOption(
                 id=f"switch:{index}:{pokemon.species}",
                 type="switch",
                 move=None,
-                switch=pokemon_to_snapshot(pokemon),
-                move_effectiveness=None
+                switch=candidate,
+                move_effectiveness=None,
+                switch_context=annotate_switch(
+                    state, candidate,
+                    recent_actions or [], battle.force_switch, battle.gen,
+                ),
             )
         )
     return actions
@@ -150,10 +162,12 @@ def battle_to_action_option(battle: Battle,) -> list[ActionOption]:
 def battle_to_decision_snapshot(
     battle: Battle, recent_actions: list[ActionMemorySnapshot] | None = None
 ) -> DecisionSnapshot:
+    state = battle_to_snapshot(battle)
+    history = list(recent_actions) if recent_actions is not None else []
     return DecisionSnapshot(
-        state=battle_to_snapshot(battle),
-        legal_actions=battle_to_action_option(battle),
+        state=state,
+        legal_actions=battle_to_action_option(battle, state, history),
         forced_switch=battle.force_switch,
-        recent_actions=list(recent_actions) if recent_actions is not None else [],
+        recent_actions=history,
     )
     

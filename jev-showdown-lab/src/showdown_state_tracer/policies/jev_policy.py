@@ -174,6 +174,12 @@ class JevSelectionPolicy:
                         " move's move_flags and ignore_ability. These are evidence,"
                         " not a guaranteed ability interaction calculation. An unknown"
                         " ability or missing flag does not establish that a move is safe."
+                        " For legal switches, consider switch_context: revealed_move_matchups"
+                        " are observed opponent moves, while possible_stab_matchups"
+                        " are only type-based possibilities. Weigh entry_hazards and"
+                        " active_boosts_lost against the new matchup, and avoid repeated"
+                        " switches without a reason. These are type and entry annotations,"
+                        " not damage or survival predictions."
                     ),
                     "criteria": criteria,
                 }

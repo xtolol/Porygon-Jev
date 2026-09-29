@@ -74,6 +74,34 @@ class MoveEffectiveness:
     effectiveness_multiplier: float | None
     effectiveness_label: str | None
 
+
+@dataclass(frozen=True, slots=True)
+class SwitchMatchup:
+    # A type-chart comparison only; it is not a damage or survival estimate.
+    source: str
+    multiplier: float
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class EntryHazard:
+    name: str
+    layers: int
+    exposure: Literal["present", "blocked_by_boots", "uncertain"]
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class SwitchContext:
+    revealed_move_matchups: list[SwitchMatchup]
+    possible_stab_matchups: list[SwitchMatchup]
+    offensive_move_matchups: list[SwitchMatchup]
+    entry_hazards: list[EntryHazard]
+    active_boosts_lost: dict[str, int]
+    forced_switch: bool
+    last_action_was_switch: bool | None
+    assumptions: list[str]
+
     
 @dataclass(frozen=True, slots=True)
 class ActionOption:
@@ -84,6 +112,7 @@ class ActionOption:
     move: MoveSnapshot | None = None
     switch: PokemonSnapshot | None = None
     move_effectiveness: MoveEffectiveness | None = None
+    switch_context: SwitchContext | None = None
 
 
 ActionOutcome = Literal[
@@ -116,7 +145,7 @@ class DecisionSnapshot:
     legal_actions: list[ActionOption]
     forced_switch: bool
     recent_actions: list[ActionMemorySnapshot] = field(default_factory=list)
-    schema_version: int = 4
+    schema_version: int = 5
     
 @dataclass(frozen=True, slots=True)
 class DecisionRecord:
