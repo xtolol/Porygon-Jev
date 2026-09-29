@@ -16,17 +16,17 @@ from showdown_state_tracer.models import (
 
 
 class JevSelectionPolicy:
-    ENDPOINT = "https://ai-gateway.vercel.sh/v1/evaluate"
-    MODEL = "typesafe-ai/jev"
+    ENDPOINT = "https://api.typesafe.ai/v1/systemone"
+    MODEL = "jev-latest"
 
     def __init__(
-        self, min_request_interval: float = 10.0, max_retry_wait: float = 120.0
+        self, min_request_interval: float = 0.0, max_retry_wait: float = 120.0
     ) -> None:
-        api_key = os.getenv("AI_GATEWAY_API_KEY")
+        api_key = os.getenv("TYPESAFE_API_KEY")
 
         if not api_key:
             raise RuntimeError(
-                "AI_GATEWAY_API_KEY environment variable is not set"
+                "TYPESAFE_API_KEY environment variable is not set"
             )
 
         self._client = httpx.AsyncClient(
@@ -92,7 +92,7 @@ class JevSelectionPolicy:
                 if (
                     response is not None
                     and response.status_code
-                    not in {429, 502, 503, 504}
+                    not in {429, 502, 503, 504, 529}
                 ):
                     response.raise_for_status()
 
@@ -205,16 +205,12 @@ class JevSelectionPolicy:
             if label in option_lookup
         }
 
-        gateway_metadata = response_data.get(
-            "providerMetadata", {}
-        ).get("gateway", {})
-
         return PolicySelection(
             action_id=selected_action.id,
             probabilities=probabilities,
             confidence=answer.get("confidence"),
             model=response_data.get("model", self.MODEL),
-            generation_id=gateway_metadata.get("generationId"),
+            generation_id=None,
         )
 
     

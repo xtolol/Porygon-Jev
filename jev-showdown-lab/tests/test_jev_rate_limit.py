@@ -80,6 +80,15 @@ def test_repeated_429s_back_off_even_without_header(monkeypatch):
     assert attempts == [0.0, 15.0, 45.0]
 
 
+def test_typesafe_overload_retries_with_backoff(monkeypatch):
+    policy, attempts = paced_policy(
+        monkeypatch, [response(529, {"Retry-After": "8"}), response(200)]
+    )
+    policy._min_request_interval = 0.0
+    asyncio.run(policy._send_until_success({}))
+    assert attempts == [0.0, 8.0]
+
+
 def test_retry_after_http_date_is_supported():
     future = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=30))
     assert JevSelectionPolicy._retry_after_seconds(future) == pytest.approx(30, abs=2)

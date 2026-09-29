@@ -1,8 +1,8 @@
 # Jev Showdown Lab
 
-An experimental Python project investigating whether [TypeSafe AI's Jev](https://vercel.com/ai-gateway/models/jev) can act as a decision policy for turn-based Pokémon Showdown battles.
+An experimental Python project investigating whether [TypeSafe AI's Jev](https://docs.typesafe.ai/) can act as a decision policy for turn-based Pokémon Showdown battles.
 
-The project uses [poke-env](https://poke-env.readthedocs.io/) to connect agents to a local Pokémon Showdown server, convert live battles into JSON-compatible snapshots, present legal actions to Jev through Vercel AI Gateway, execute the selected action, and record decision telemetry.
+The project uses [poke-env](https://poke-env.readthedocs.io/) to connect agents to a local Pokémon Showdown server, convert live battles into JSON-compatible snapshots, present legal actions to Jev through TypeSafe's API, execute the selected action, and record decision telemetry.
 
 ## Project status
 
@@ -63,7 +63,7 @@ Jev receives snapshots rather than live poke-env objects. Its result is validate
 - Python 3.12
 - Node.js 22 or newer
 - A local Pokémon Showdown server
-- A Vercel AI Gateway API key
+- A TypeSafe API key
 - macOS, Windows or Linux
 
 The package currently supports Python:
@@ -139,20 +139,20 @@ The example players use generated guest names and no Showdown passwords. Without
 `Your authentication token was invalid`. Restart the server with this flag
 before retrying the battle. Use it only on a private local development server.
 
-## Vercel AI Gateway configuration
+## TypeSafe API configuration
 
-Create an AI Gateway API key through the Vercel dashboard.
+Create an API key in your TypeSafe account.
 
 Set it for the current macOS or Linux terminal:
 
 ```bash
-export AI_GATEWAY_API_KEY="your-api-key"
+export TYPESAFE_API_KEY="your-api-key"
 ```
 
 On Windows PowerShell:
 
 ```powershell
-$env:AI_GATEWAY_API_KEY="your-api-key"
+$env:TYPESAFE_API_KEY="your-api-key"
 ```
 
 Never commit the key to the repository.
@@ -160,13 +160,13 @@ Never commit the key to the repository.
 The policy calls:
 
 ```text
-POST https://ai-gateway.vercel.sh/v1/evaluate
+POST https://api.typesafe.ai/v1/systemone
 ```
 
 using the model:
 
 ```text
-typesafe-ai/jev
+jev-latest
 ```
 
 Each request contains:
@@ -177,7 +177,7 @@ Each request contains:
 
 Jev returns a selected option, probability distribution and confidence value.
 
-AI Gateway pricing, availability and rate limits can change. Check the Vercel dashboard and current model page before running large experiments.
+Check TypeSafe's API documentation and account dashboard for current model availability and rate limits before running large experiments.
 
 ## Running a battle
 
@@ -234,12 +234,13 @@ Selection source is especially important. A battle containing fallback decisions
 
 ## Reliability
 
-AI Gateway may return transient errors such as:
+The TypeSafe API may return transient errors such as:
 
 - `429 Too Many Requests`
 - `502 Bad Gateway`
 - `503 Service Unavailable`
 - `504 Gateway Timeout`
+- `529 Overloaded`
 
 The policy should:
 
@@ -377,6 +378,6 @@ Jev could eventually act as a prior, teacher or high-level selector while a loca
 
 - [poke-env documentation](https://poke-env.readthedocs.io/)
 - [Pokémon Showdown](https://github.com/smogon/pokemon-showdown)
-- [Vercel AI Gateway evaluation API](https://vercel.com/docs/ai-gateway/modalities/evaluation)
-- [Jev on Vercel AI Gateway](https://vercel.com/ai-gateway/models/jev)
+- [TypeSafe API reference](https://docs.typesafe.ai/api)
+- [TypeSafe models](https://docs.typesafe.ai/models)
 - [TypeSafe AI](https://typesafe.ai/)
