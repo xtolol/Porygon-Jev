@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 from poke_env.battle import Battle, Move, Pokemon, SideCondition
 
-from showdown_state_tracer.models import ActionMemorySnapshot
+from showdown_state_tracer.models import ActionMemorySnapshot, OpponentActionSnapshot
 from showdown_state_tracer.policies.jev_policy import JevSelectionPolicy
 from showdown_state_tracer.snapshot import battle_to_decision_snapshot
 from showdown_state_tracer.switch_context import annotate_switch
@@ -51,7 +51,7 @@ def test_each_legal_switch_gets_distinct_type_and_entry_context():
     gastrodon = switch(decision, "gastrodon").switch_context
     gyarados = switch(decision, "gyarados").switch_context
 
-    assert decision.schema_version == 5
+    assert decision.schema_version == 6
     assert decision.legal_actions[0].switch_context is None
     assert [(m.source, m.multiplier) for m in gastrodon.revealed_move_matchups] == [
         ("thunderbolt", 0)
@@ -70,7 +70,8 @@ def test_each_legal_switch_gets_distinct_type_and_entry_context():
     assert gyarados.entry_hazards[1].exposure == "uncertain"
     assert "2x" in gyarados.entry_hazards[0].reason
     assert gastrodon.active_boosts_lost == {"atk": 2}
-    assert gastrodon.last_action_was_switch is None
+    assert gastrodon.consecutive_voluntary_switch_count == 0
+    assert gastrodon.last_active_opponent_move_id is None
     assert not gastrodon.forced_switch
 
 
@@ -95,6 +96,7 @@ def test_forced_switch_and_existing_history_are_annotations_not_mutations():
         turn=2, action_id="switch:0:Gastrodon", actor_species="Ursaluna",
         target_species=None, target_hp_before=None, target_hp_after=None,
         damage_fraction=None, outcome="switch_selected", known_target_ability=None,
+        forced_switch=False,
     )]
     decision = battle_to_decision_snapshot(battle, history)
     state_before = asdict(decision.state)
@@ -105,13 +107,52 @@ def test_forced_switch_and_existing_history_are_annotations_not_mutations():
     )
 
     assert context.forced_switch
-    assert context.last_action_was_switch
+    assert context.consecutive_voluntary_switch_count == 1
     assert asdict(decision.state) == state_before
     assert asdict(switch(decision, "gyarados").switch) == candidate_before
 
 
+def test_streak_excludes_forced_switch_and_move_follows_current_active_species():
+    battle = battle_with_switches()
+    own = [ActionMemorySnapshot(
+        turn=1, action_id="switch:0:gastrodon", actor_species="ursaluna",
+        target_species=None, target_hp_before=None, target_hp_after=None,
+        damage_fraction=None, outcome="switch_selected", known_target_ability=None,
+        forced_switch=False,
+    )]
+    opponent = [
+        OpponentActionSnapshot(1, "electrode", "move", move_id="thunderbolt"),
+        OpponentActionSnapshot(2, "electrode", "switch", switch_to_species="mandibuzz"),
+        OpponentActionSnapshot(2, "mandibuzz", "move", move_id="uturn"),
+    ]
+    decision = battle_to_decision_snapshot(battle, own, opponent)
+    context = switch(decision, "gastrodon").switch_context
+    assert context.consecutive_voluntary_switch_count == 1
+    assert context.last_active_opponent_move_id is None
+    opponent.append(OpponentActionSnapshot(3, "electrode", "move", move_id="thunderbolt"))
+    assert switch(battle_to_decision_snapshot(battle, own, opponent), "gastrodon").switch_context.last_active_opponent_move_id == "thunderbolt"
+    own.append(ActionMemorySnapshot(
+        turn=2, action_id="switch:1:gyarados", actor_species="gastrodon",
+        target_species=None, target_hp_before=None, target_hp_after=None,
+        damage_fraction=None, outcome="switch_selected", known_target_ability=None,
+        forced_switch=True,
+    ))
+    assert switch(battle_to_decision_snapshot(battle, own, opponent), "gastrodon").switch_context.consecutive_voluntary_switch_count == 0
+
+
 def test_switch_context_is_sent_with_the_legal_option_to_jev():
-    decision = battle_to_decision_snapshot(battle_with_switches())
+    battle = battle_with_switches()
+    history = [ActionMemorySnapshot(
+        turn=1, action_id="switch:0:gastrodon", actor_species="ursaluna",
+        target_species=None, target_hp_before=None, target_hp_after=None,
+        damage_fraction=None, outcome="switch_selected", known_target_ability=None,
+        switch_from_species="ursaluna", switch_to_species="gastrodon",
+        forced_switch=False, switch_in_hp_before=1.0, switch_in_hp_after=0.875,
+    )]
+    observed = [OpponentActionSnapshot(
+        turn=1, actor_species="electrode", action_type="move", move_id="thunderbolt",
+    )]
+    decision = battle_to_decision_snapshot(battle, history, observed)
     policy = object.__new__(JevSelectionPolicy)
     payloads = []
 
@@ -132,6 +173,10 @@ def test_switch_context_is_sent_with_the_legal_option_to_jev():
     assert option["switch_context"]["revealed_move_matchups"][0]["multiplier"] == 0
     assert option["switch_context"]["entry_hazards"][0]["name"] == "STEALTH_ROCK"
     assert option["switch_context"]["active_boosts_lost"] == {"atk": 2}
+    assert option["switch_context"]["last_active_opponent_move_id"] == "thunderbolt"
+    assert option["switch_context"]["consecutive_voluntary_switch_count"] == 1
+    assert payloads[0]["state"]["recent_actions"][0]["switch_in_hp_after"] == 0.875
+    assert payloads[0]["state"]["recent_opponent_actions"][0]["move_id"] == "thunderbolt"
     assert "not damage or survival predictions" in (
         payloads[0]["questions"]["action"]["instructions"]
     )

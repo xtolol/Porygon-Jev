@@ -99,7 +99,8 @@ class SwitchContext:
     entry_hazards: list[EntryHazard]
     active_boosts_lost: dict[str, int]
     forced_switch: bool
-    last_action_was_switch: bool | None
+    consecutive_voluntary_switch_count: int
+    last_active_opponent_move_id: str | None
     assumptions: list[str]
 
     
@@ -135,6 +136,20 @@ class ActionMemorySnapshot:
     damage_fraction: float | None
     outcome: ActionOutcome
     known_target_ability: str | None
+    switch_from_species: str | None = None
+    switch_to_species: str | None = None
+    forced_switch: bool | None = None
+    switch_in_hp_before: float | None = None
+    switch_in_hp_after: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OpponentActionSnapshot:
+    turn: int
+    actor_species: str | None
+    action_type: Literal["move", "switch"]
+    move_id: str | None = None
+    switch_to_species: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,7 +160,8 @@ class DecisionSnapshot:
     legal_actions: list[ActionOption]
     forced_switch: bool
     recent_actions: list[ActionMemorySnapshot] = field(default_factory=list)
-    schema_version: int = 5
+    recent_opponent_actions: list[OpponentActionSnapshot] = field(default_factory=list)
+    schema_version: int = 6
     
 @dataclass(frozen=True, slots=True)
 class DecisionRecord:

@@ -1,5 +1,6 @@
 from poke_env.battle import Battle
 from poke_env.player import RandomPlayer
+from poke_env.data import to_id_str
 from collections import defaultdict
 
 from showdown_state_tracer.battle_memory import BattleMemory
@@ -23,12 +24,63 @@ class TracingRandomPlayer(RandomPlayer):
         self.selection_policy = selection_policy
         self._decision_counts: dict[str, int] = defaultdict(int)
         self._memory = BattleMemory()
+
+    async def _handle_battle_message(self, split_messages):
+        # poke-env processes a request (and calls choose_move) inside this batch.
+        # Read preceding protocol actions first so the next choice can see them.
+        self._observe_battle_messages(split_messages)
+        await super()._handle_battle_message(split_messages)
+
+    def _observe_battle_messages(self, split_messages) -> None:
+        if not split_messages or not split_messages[0] or not split_messages[0][0].startswith(">battle-"):
+            return
+        tag = split_messages[0][0][1:]
+        battle = self._battles.get(tag)
+        if battle is None or battle.player_role not in {"p1", "p2"}:
+            return
+        opponent_role = "p2" if battle.player_role == "p1" else "p1"
+        turn = battle.turn
+        active = battle.opponent_active_pokemon
+        active_species = active.species if active else None
+        species_by_ident = {
+            key: pokemon.species for key, pokemon in battle.opponent_team.items()
+        }
+        for message in split_messages[1:]:
+            if len(message) < 3:
+                continue
+            event = message[1]
+            if event in {"request", "win", "tie"}:
+                break
+            if event == "turn":
+                try:
+                    turn = int(message[2])
+                except ValueError:
+                    pass
+                continue
+            ident = message[2]
+            if ident[:2] != opponent_role or event not in {"move", "switch", "drag"}:
+                continue
+            key = opponent_role + ident[3:] if len(ident) > 3 else ident
+            if event in {"switch", "drag"} and len(message) >= 4:
+                destination = to_id_str(message[3].split(",", 1)[0])
+                self._memory.observe_opponent_event(
+                    tag, turn, active_species, "switch",
+                    switch_to_species=destination,
+                )
+                species_by_ident[key] = destination
+                active_species = destination
+            elif event == "move" and len(message) >= 4:
+                actor = species_by_ident.get(key, active_species)
+                self._memory.observe_opponent_event(
+                    tag, turn, actor, "move", move_id=message[3],
+                )
         
     async def choose_move(self, battle: Battle) -> int:
         battle_id = battle.battle_tag
         self._memory.resolve(battle)
         decision = battle_to_decision_snapshot(
-            battle, recent_actions=self._memory.recent_actions(battle_id)
+            battle, recent_actions=self._memory.recent_actions(battle_id),
+            recent_opponent_actions=self._memory.recent_opponent_actions(battle_id),
         )
 
         self._decision_counts[battle_id] += 1

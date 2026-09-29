@@ -8,6 +8,7 @@ from showdown_state_tracer.models import (
     BattleSnapshot,
     EntryHazard,
     PokemonSnapshot,
+    OpponentActionSnapshot,
     SwitchContext,
     SwitchMatchup,
 )
@@ -91,6 +92,7 @@ def annotate_switch(
     recent_actions: list[ActionMemorySnapshot],
     forced_switch: bool,
     gen: int,
+    recent_opponent_actions: list[OpponentActionSnapshot] | None = None,
 ) -> SwitchContext:
     """Derive only visible, per-candidate facts; do not mutate the battle state."""
     opponent = state.opponent_active_pokemon
@@ -117,6 +119,20 @@ def annotate_switch(
                 offense.append(matchup)
 
     active = state.our_active_pokemon
+    voluntary_streak = 0
+    for action in reversed(recent_actions):
+        if action.action_id.startswith("switch:") and action.forced_switch is False:
+            voluntary_streak += 1
+        else:
+            break
+    last_move = next((
+        action for action in reversed(recent_opponent_actions or [])
+        if action.action_type == "move"
+    ), None)
+    last_active_move = (
+        last_move.move_id if last_move and opponent is not None
+        and last_move.actor_species == opponent.species else None
+    )
     return SwitchContext(
         revealed_move_matchups=revealed,
         possible_stab_matchups=possible_stab,
@@ -127,14 +143,13 @@ def annotate_switch(
             if stage
         },
         forced_switch=forced_switch,
-        last_action_was_switch=(
-            recent_actions[-1].action_id.startswith("switch:")
-            if recent_actions else None
-        ),
+        consecutive_voluntary_switch_count=voluntary_streak,
+        last_active_opponent_move_id=last_active_move,
         assumptions=[
             "Revealed move matchups use only moves observed on the active opponent",
             "Possible STAB matchups describe types, not known moves or predicted actions",
             "Matchups use typing only; abilities, items, Tera changes, and move effects may alter outcomes",
             "A voluntary switch gives the opponent an action; no opponent action is predicted",
+            "Last active opponent move is historical evidence, not a prediction of its next move",
         ],
     )

@@ -1,6 +1,6 @@
 from poke_env.battle import Move
 from poke_env.battle.pokemon import Pokemon
-from showdown_state_tracer.models import MoveSnapshot, PokemonSnapshot, FieldSnapshot, BattleSnapshot, ActionOption, DecisionSnapshot, MoveEffectiveness, ActionMemorySnapshot
+from showdown_state_tracer.models import MoveSnapshot, PokemonSnapshot, FieldSnapshot, BattleSnapshot, ActionOption, DecisionSnapshot, MoveEffectiveness, ActionMemorySnapshot, OpponentActionSnapshot
 from enum import Enum
 from collections.abc import Mapping
 from poke_env.battle import Battle
@@ -126,6 +126,7 @@ def battle_to_action_option(
     battle: Battle,
     state: BattleSnapshot | None = None,
     recent_actions: list[ActionMemorySnapshot] | None = None,
+    recent_opponent_actions: list[OpponentActionSnapshot] | None = None,
 ) -> list[ActionOption]:
     actions: list[ActionOption] = []
     if state is None:
@@ -154,20 +155,24 @@ def battle_to_action_option(
                 switch_context=annotate_switch(
                     state, candidate,
                     recent_actions or [], battle.force_switch, battle.gen,
+                    recent_opponent_actions,
                 ),
             )
         )
     return actions
 
 def battle_to_decision_snapshot(
-    battle: Battle, recent_actions: list[ActionMemorySnapshot] | None = None
+    battle: Battle, recent_actions: list[ActionMemorySnapshot] | None = None,
+    recent_opponent_actions: list[OpponentActionSnapshot] | None = None,
 ) -> DecisionSnapshot:
     state = battle_to_snapshot(battle)
     history = list(recent_actions) if recent_actions is not None else []
+    opponent_history = list(recent_opponent_actions) if recent_opponent_actions is not None else []
     return DecisionSnapshot(
         state=state,
-        legal_actions=battle_to_action_option(battle, state, history),
+        legal_actions=battle_to_action_option(battle, state, history, opponent_history),
         forced_switch=battle.force_switch,
         recent_actions=history,
+        recent_opponent_actions=opponent_history,
     )
     

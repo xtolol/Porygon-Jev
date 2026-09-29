@@ -155,6 +155,7 @@ class JevSelectionPolicy:
             "state": {
                 **asdict(decision.state),
                 "recent_actions": [asdict(action) for action in decision.recent_actions],
+                "recent_opponent_actions": [asdict(action) for action in decision.recent_opponent_actions],
             },
             "questions": {
                 "action": {
@@ -178,7 +179,13 @@ class JevSelectionPolicy:
                         " are observed opponent moves, while possible_stab_matchups"
                         " are only type-based possibilities. Weigh entry_hazards and"
                         " active_boosts_lost against the new matchup, and avoid repeated"
-                        " switches without a reason. These are type and entry annotations,"
+                        " switches without a reason. consecutive_voluntary_switch_count"
+                        " counts our consecutive chosen switches, excluding forced ones."
+                        " recent_opponent_actions lists only observed move uses and switches;"
+                        " repeated moves remain repeated evidence. last_active_opponent_move_id"
+                        " refers to a move previously used by the current active opponent,"
+                        " not a prediction. Switch HP before and after is net turn change,"
+                        " not necessarily damage from the opponent. These are type and entry annotations,"
                         " not damage or survival predictions."
                     ),
                     "criteria": criteria,
