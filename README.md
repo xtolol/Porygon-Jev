@@ -66,10 +66,10 @@ Jev receives snapshots rather than live poke-env objects. Its result is validate
 - A Vercel AI Gateway API key
 - macOS, Windows or Linux
 
-The project currently expects Python:
+The package currently supports Python:
 
 ```text
->=3.12,<3.13
+>=3.12,<3.14
 ```
 
 ## Python installation
@@ -110,18 +110,14 @@ Clone Pokémon Showdown separately:
 git clone https://github.com/smogon/pokemon-showdown.git
 cd pokemon-showdown
 npm ci
+cp config/config-example.js config/config.js
 ```
 
-Start it on port 8080:
+Start it on the default port 8000 with guest authentication disabled for
+local bot battles:
 
 ```bash
-./pokemon-showdown start 8080
-```
-
-Alternatively:
-
-```bash
-node pokemon-showdown start 8080
+node pokemon-showdown start --no-security
 ```
 
 Keep the server terminal open while running the Python agent.
@@ -129,14 +125,19 @@ Keep the server terminal open while running the Python agent.
 Confirm that it is listening on macOS:
 
 ```bash
-lsof -nP -iTCP:8080 -sTCP:LISTEN
+lsof -nP -iTCP:8000 -sTCP:LISTEN
 ```
 
-The poke-env configuration should point to:
+The project's `LOCAL_SERVER` configuration points to:
 
 ```text
-ws://127.0.0.1:8080/showdown/websocket
+ws://127.0.0.1:8000/showdown/websocket
 ```
+
+The example players use generated guest names and no Showdown passwords. Without
+`--no-security`, Showdown rejects their empty authentication assertions with
+`Your authentication token was invalid`. Restart the server with this flag
+before retrying the battle. Use it only on a private local development server.
 
 ## Vercel AI Gateway configuration
 
@@ -186,10 +187,10 @@ Start the local Showdown server first, then activate the Python environment:
 source .venv/bin/activate
 ```
 
-Run the battle example from the repository root:
+Run the Jev battle example from the `jev-showdown-lab` directory:
 
 ```bash
-python examples/hello_battle.py
+python examples/jev_battle.py
 ```
 
 The terminal should display selections resembling:

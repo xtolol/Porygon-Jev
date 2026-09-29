@@ -29,5 +29,6 @@ async def main():
     finally:
         await policy.close()
         await tracing_player.ps_client.stop_listening()
+        await random_player.ps_client.stop_listening()
 if __name__ == "__main__":
     asyncio.run(main())
