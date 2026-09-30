@@ -1,9 +1,12 @@
 from poke_env.battle import Move
 from poke_env.battle.pokemon import Pokemon
-from showdown_state_tracer.models import MoveSnapshot, PokemonSnapshot, FieldSnapshot, BattleSnapshot, ActionOption, DecisionSnapshot, MoveEffectiveness, ActionMemorySnapshot
+from showdown_state_tracer.models import MoveSnapshot, PokemonSnapshot, FieldSnapshot, BattleSnapshot, ActionOption, DecisionSnapshot, MoveEffectiveness, ActionMemorySnapshot, OpponentActionSnapshot
 from enum import Enum
 from collections.abc import Mapping
 from poke_env.battle import Battle
+from showdown_state_tracer.switch_context import annotate_switch
+from showdown_state_tracer.randbats_context import annotate_opponent_sets
+from showdown_state_tracer.randbats_data import RandbatsDataset
 
 def effectiveness_label(multiplier: float) -> str:
     if multiplier == 0:
@@ -80,6 +83,10 @@ def move_to_snapshot(move: Move) -> MoveSnapshot:
         target=move.target.name if move.target is not None else None
     )
     
+# Parameters: pokemon is the poke-env object for one battle participant.
+# Purpose: copy observable attributes without exposing a hidden Tera type.
+# Returns: an immutable PokemonSnapshot containing only revealed opponent facts.
+# Pipeline: feeds both the regular Jev state and randbats set filtering.
 def pokemon_to_snapshot(pokemon: Pokemon) -> PokemonSnapshot:
     return PokemonSnapshot(
         types=[t.name for t in pokemon.types],
@@ -93,7 +100,13 @@ def pokemon_to_snapshot(pokemon: Pokemon) -> PokemonSnapshot:
         boosts=pokemon.boosts,
         active=pokemon.active,
         fainted=pokemon.fainted,
-        revealed=pokemon.revealed
+        revealed=pokemon.revealed,
+        revealed_tera_type=(
+            pokemon.tera_type.name
+            if getattr(pokemon, "is_terastallized", False)
+            and getattr(pokemon, "tera_type", None) is not None
+            else None
+        ),
     )
 
 def field_to_snapshot(battle: Battle) -> FieldSnapshot:
@@ -121,8 +134,15 @@ def battle_to_snapshot(battle: Battle) -> BattleSnapshot:
         won=battle.won,
     )
     
-def battle_to_action_option(battle: Battle,) -> list[ActionOption]:
+def battle_to_action_option(
+    battle: Battle,
+    state: BattleSnapshot | None = None,
+    recent_actions: list[ActionMemorySnapshot] | None = None,
+    recent_opponent_actions: list[OpponentActionSnapshot] | None = None,
+) -> list[ActionOption]:
     actions: list[ActionOption] = []
+    if state is None:
+        state = battle_to_snapshot(battle)
     
     for index, move in enumerate(battle.available_moves):
         actions.append(
@@ -136,24 +156,46 @@ def battle_to_action_option(battle: Battle,) -> list[ActionOption]:
         )
     
     for index, pokemon in enumerate(battle.available_switches):
+        candidate = pokemon_to_snapshot(pokemon)
         actions.append(
             ActionOption(
                 id=f"switch:{index}:{pokemon.species}",
                 type="switch",
                 move=None,
-                switch=pokemon_to_snapshot(pokemon),
-                move_effectiveness=None
+                switch=candidate,
+                move_effectiveness=None,
+                switch_context=annotate_switch(
+                    state, candidate,
+                    recent_actions or [], battle.force_switch, battle.gen,
+                    recent_opponent_actions,
+                ),
             )
         )
     return actions
 
+# Parameters: battle supplies legal choices; histories contain observed actions;
+# dataset is the cached set data for this battle format (or None if unavailable).
+# Purpose: build a decision and attach a single active-opponent estimate.
+# Returns: a DecisionSnapshot ready for Jev and decision telemetry.
+# Pipeline: runs once for each choice, after the latest battle events are processed.
 def battle_to_decision_snapshot(
-    battle: Battle, recent_actions: list[ActionMemorySnapshot] | None = None
+    battle: Battle, recent_actions: list[ActionMemorySnapshot] | None = None,
+    recent_opponent_actions: list[OpponentActionSnapshot] | None = None,
+    randbats_dataset: RandbatsDataset | None = None,
 ) -> DecisionSnapshot:
+    state = battle_to_snapshot(battle)
+    history = list(recent_actions) if recent_actions is not None else []
+    opponent_history = list(recent_opponent_actions) if recent_opponent_actions is not None else []
     return DecisionSnapshot(
-        state=battle_to_snapshot(battle),
-        legal_actions=battle_to_action_option(battle),
+        state=state,
+        legal_actions=battle_to_action_option(battle, state, history, opponent_history),
         forced_switch=battle.force_switch,
-        recent_actions=list(recent_actions) if recent_actions is not None else [],
+        recent_actions=history,
+        recent_opponent_actions=opponent_history,
+        opponent_set_estimate=(
+            annotate_opponent_sets(state.opponent_active_pokemon, randbats_dataset)
+            if state.opponent_active_pokemon and state.battle_format == "gen9randombattle"
+            else None
+        ),
     )
     

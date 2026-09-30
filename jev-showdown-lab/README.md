@@ -15,7 +15,7 @@ The current implementation can:
 - Enumerate legal moves and switches.
 - Send the current state and legal actions to Jev.
 - Map Jev’s selected action back to a live poke-env battle order.
-- Retry transient AI Gateway failures.
+- Retry transient TypeSafe API failures.
 - Fall back to another policy when configured.
 - Record each decision and its selection source.
 - Run local battles against `RandomPlayer`.
@@ -57,6 +57,20 @@ Decision telemetry
 ```
 
 Jev receives snapshots rather than live poke-env objects. Its result is validated against the legal actions before being converted back into a Showdown order.
+
+### Switching memory (v0.3b)
+
+Each legal switch carries type matchups, visible entry hazards, boosts lost on switching, the count of consecutive voluntary switches, and the most recent observed move when its user matches the current active opponent. The type matchups and possible STAB are typing evidence, not damage estimates or predictions.
+
+`recent_actions` holds up to three of our resolved selections. A switch entry includes its source, destination, whether the selection was forced, and the selected Pokémon's HP before and after the turn. That HP difference is a net observation and may include hazards, healing, or other effects. `recent_opponent_actions` holds up to six observed opponent move and switch events from Showdown's battle messages; repeated uses remain separate events. Both histories are scoped to one battle and cleared when it finishes. The decision schema is 7 and the telemetry record schema is 9.
+
+### Randbats opponent set estimates
+
+For `gen9randombattle`, the player downloads [pkmn/randbats complete sampled sets](https://github.com/pkmn/randbats/blob/main/data/full/gen9randombattle.json) once and stores them in the local cache at `~/.cache/porygon-jev/randbats/` (or under `$XDG_CACHE_HOME/porygon-jev/randbats/`). It refreshes after 24 hours; if a refresh fails, it can still use its cached copy. The example warms this cache before starting a battle. Other formats receive no set estimate.
+
+On each decision, the current opponent's species selects a group of complete sets in memory. Revealed moves, known item and ability, observed level, and a Tera type *only after terastallization* filter those sets. A move's `sampled_set_fraction` is the number of surviving sampled sets containing that unrevealed move divided by the total surviving sample count. At most eight possible moves are included in the single `opponent_set_estimate` attached to the decision; `omitted_move_count` records any others. Jev receives revealed moves separately in `PokemonSnapshot.moves` and `observed_move_ids`.
+
+These fractions describe sampled generated sets, not the chance that the opponent chooses a move on this turn. Missing data and zero matching sets produce explicit `unavailable` and `no_matching_sets` results. The estimate includes the data download timestamp, so an offline cached copy can be identified. The role-based `stats` JSON is not queried for these conditional frequencies because its move marginals do not retain full move combinations. No numeric stat or damage estimate is produced by this feature.
 
 ## Requirements
 
@@ -356,6 +370,7 @@ A small number of battles is useful for debugging, but meaningful comparisons re
 - Jev is a hosted, stateless decision model.
 - Battle experience does not update Jev’s weights.
 - The current context does not yet include damage calculation or lookahead.
+- Randbats estimates may be stale, and generated-team sample frequencies do not model an opponent's move selection strategy.
 - Random battles introduce substantial team and matchup variance.
 - API availability can affect which policy actually controls a turn.
 - Jev confidence is not the probability that an action will win the battle.

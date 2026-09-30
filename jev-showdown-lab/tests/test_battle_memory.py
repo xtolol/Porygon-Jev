@@ -14,17 +14,22 @@ from showdown_state_tracer.tracing_player import TracingRandomPlayer
 
 def battle(tag="battle-1", hp=1.0):
     target = SimpleNamespace(species="Electrode", current_hp_fraction=hp, ability=None)
+    active = SimpleNamespace(species="Ursaluna", current_hp_fraction=0.8)
+    pivot = SimpleNamespace(species="Skeledirge", current_hp_fraction=1.0)
     return SimpleNamespace(
         battle_tag=tag,
         turn=1,
-        active_pokemon=SimpleNamespace(species="Ursaluna"),
+        active_pokemon=active,
+        team={"p1: Ursaluna": active, "p1: Skeledirge": pivot},
+        available_switches=[pivot],
+        force_switch=False,
         opponent_active_pokemon=target,
         opponent_team={"p2: Electrode": target},
     )
 
 
 MOVE = ActionOption(id="move:0:hypervoice", type="move")
-SWITCH = ActionOption(id="switch:1:skeledirge", type="switch")
+SWITCH = ActionOption(id="switch:0:skeledirge", type="switch")
 
 
 @pytest.mark.parametrize(
@@ -95,6 +100,76 @@ def test_switch_observation_has_no_target_hp():
     assert (observed.outcome, observed.target_hp_before, observed.damage_fraction) == (
         "switch_selected", None, None
     )
+    assert observed.switch_from_species == "Ursaluna"
+    assert observed.switch_to_species == "Skeledirge"
+    assert observed.forced_switch is False
+    assert observed.switch_in_hp_before == 1.0
+    assert observed.switch_in_hp_after == 1.0
+
+
+def test_forced_switch_and_net_entry_hp_are_recorded_without_damage_attribution():
+    memory = BattleMemory()
+    state = battle()
+    state.force_switch = True
+    memory.remember(state, SWITCH)
+    state.team["p1: Skeledirge"].current_hp_fraction = 0.75
+    observed = memory.resolve(state)
+    assert observed.forced_switch is True
+    assert observed.switch_in_hp_before == 1.0
+    assert observed.switch_in_hp_after == 0.75
+    assert observed.damage_fraction is None
+
+
+def test_opponent_events_preserve_repeats_switches_and_battle_isolation():
+    memory = BattleMemory()
+    for turn in range(1, 6):
+        memory.observe_opponent_event("battle-1", turn, "electrode", "move", move_id="Thunderbolt")
+    memory.observe_opponent_event("battle-1", 5, "electrode", "switch", switch_to_species="mandibuzz")
+    memory.observe_opponent_event("battle-1", 6, "mandibuzz", "move", move_id="U-turn")
+    memory.observe_opponent_event("battle-2", 1, "pikachu", "move", move_id="Thunderbolt")
+    history = memory.recent_opponent_actions("battle-1")
+    assert len(history) == 6
+    assert [event.move_id for event in history[:4]] == ["thunderbolt"] * 4
+    assert (history[-2].action_type, history[-2].switch_to_species) == ("switch", "mandibuzz")
+    assert history[-1].move_id == "uturn"
+    memory.clear("battle-1")
+    assert memory.recent_opponent_actions("battle-1") == []
+    assert len(memory.recent_opponent_actions("battle-2")) == 1
+
+
+def test_protocol_batch_reaches_memory_before_request_and_tracks_pivot(monkeypatch):
+    from poke_env.player import RandomPlayer
+
+    state = battle(tag="battle-gen9randombattle-123")
+    state.player_role = "p1"
+    player = object.__new__(TracingRandomPlayer)
+    player._memory = BattleMemory()
+    player._battles = {state.battle_tag: state}
+    seen_at_request = []
+
+    async def handle_batch(self, messages):
+        seen_at_request.extend(self._memory.recent_opponent_actions(state.battle_tag))
+
+    monkeypatch.setattr(RandomPlayer, "_handle_battle_message", handle_batch)
+    messages = [
+        [">" + state.battle_tag],
+        ["", "turn", "2"],
+        ["", "move", "p2a: Electrode", "Thunderbolt", "p1a: Ursaluna"],
+        ["", "move", "p2a: Electrode", "Thunderbolt", "p1a: Ursaluna"],
+        ["", "switch", "p2a: Mandibuzz", "Mandibuzz, L85", "100/100"],
+        ["", "move", "p2a: Mandibuzz", "U-turn", "p1a: Ursaluna"],
+        ["", "switch", "p2a: Electrode", "Electrode, L85", "100/100"],
+        ["", "request", "{}"],
+    ]
+    asyncio.run(player._handle_battle_message(messages))
+    assert [(a.turn, a.action_type, a.actor_species, a.move_id, a.switch_to_species)
+            for a in seen_at_request] == [
+        (2, "move", "Electrode", "thunderbolt", None),
+        (2, "move", "Electrode", "thunderbolt", None),
+        (2, "switch", "Electrode", None, "mandibuzz"),
+        (2, "move", "mandibuzz", "uturn", None),
+        (2, "switch", "mandibuzz", None, "electrode"),
+    ]
 
 
 def test_player_passes_resolved_history_and_records_fallback(monkeypatch):
@@ -102,10 +177,11 @@ def test_player_passes_resolved_history_and_records_fallback(monkeypatch):
 
     decisions = []
 
-    def make_decision(state, recent_actions):
+    def make_decision(state, recent_actions, recent_opponent_actions):
         return DecisionSnapshot(
             state=state, legal_actions=[MOVE], forced_switch=False,
             recent_actions=recent_actions,
+            recent_opponent_actions=recent_opponent_actions,
         )
 
     monkeypatch.setattr(module, "battle_to_decision_snapshot", make_decision)
@@ -131,6 +207,7 @@ def test_player_passes_resolved_history_and_records_fallback(monkeypatch):
     assert decisions[1].decision.recent_actions[0].outcome == "no_net_damage_observed"
     player._battle_finished_callback(state)
     assert player._memory.recent_actions(state.battle_tag) == []
+    assert player._memory.recent_opponent_actions(state.battle_tag) == []
     assert state.battle_tag not in player._decision_counts
 
 
@@ -142,9 +219,11 @@ def test_jev_payload_contains_shared_memory():
     memory = BattleMemory()
     state = battle()
     memory.remember(state, MOVE)
+    memory.observe_opponent_event(state.battle_tag, 1, "electrode", "move", move_id="Thunderbolt")
     decision = DecisionSnapshot(
         state=State(), legal_actions=[MOVE], forced_switch=False,
         recent_actions=[memory.resolve(state)],
+        recent_opponent_actions=memory.recent_opponent_actions(state.battle_tag),
     )
     policy = object.__new__(JevSelectionPolicy)
     payloads = []
@@ -160,3 +239,4 @@ def test_jev_payload_contains_shared_memory():
 
     assert result.action_id == MOVE.id
     assert payloads[0]["state"]["recent_actions"][0]["outcome"] == "no_net_damage_observed"
+    assert payloads[0]["state"]["recent_opponent_actions"][0]["move_id"] == "thunderbolt"

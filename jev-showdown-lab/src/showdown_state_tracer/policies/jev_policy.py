@@ -16,17 +16,17 @@ from showdown_state_tracer.models import (
 
 
 class JevSelectionPolicy:
-    ENDPOINT = "https://ai-gateway.vercel.sh/v1/evaluate"
-    MODEL = "typesafe-ai/jev"
+    ENDPOINT = "https://api.typesafe.ai/v1/systemone"
+    MODEL = "jev-latest"
 
     def __init__(
-        self, min_request_interval: float = 10.0, max_retry_wait: float = 120.0
+        self, min_request_interval: float = 0.0, max_retry_wait: float = 120.0
     ) -> None:
-        api_key = os.getenv("AI_GATEWAY_API_KEY")
+        api_key = os.getenv("TYPESAFE_API_KEY")
 
         if not api_key:
             raise RuntimeError(
-                "AI_GATEWAY_API_KEY environment variable is not set"
+                "TYPESAFE_API_KEY environment variable is not set"
             )
 
         self._client = httpx.AsyncClient(
@@ -92,7 +92,7 @@ class JevSelectionPolicy:
                 if (
                     response is not None
                     and response.status_code
-                    not in {429, 502, 503, 504}
+                    not in {429, 502, 503, 504, 529}
                 ):
                     response.raise_for_status()
 
@@ -126,6 +126,10 @@ class JevSelectionPolicy:
                     f"{self._next_request_time - time.monotonic():.1f}s"
                 )
 
+    # Parameters: decision contains public battle facts, legal actions, and set estimates.
+    # Purpose: send a single compact Jev choice request and validate its answer.
+    # Returns: the selected legal action id with Jev's confidence and probabilities.
+    # Pipeline: consumes the annotated decision after snapshot construction.
     async def select(
         self,
         decision: DecisionSnapshot,
@@ -155,6 +159,11 @@ class JevSelectionPolicy:
             "state": {
                 **asdict(decision.state),
                 "recent_actions": [asdict(action) for action in decision.recent_actions],
+                "recent_opponent_actions": [asdict(action) for action in decision.recent_opponent_actions],
+                "opponent_set_estimate": (
+                    asdict(decision.opponent_set_estimate)
+                    if decision.opponent_set_estimate is not None else None
+                ),
             },
             "questions": {
                 "action": {
@@ -174,6 +183,25 @@ class JevSelectionPolicy:
                         " move's move_flags and ignore_ability. These are evidence,"
                         " not a guaranteed ability interaction calculation. An unknown"
                         " ability or missing flag does not establish that a move is safe."
+                        " For legal switches, consider switch_context: revealed_move_matchups"
+                        " are observed opponent moves, while possible_stab_matchups"
+                        " are only type-based possibilities. Weigh entry_hazards and"
+                        " active_boosts_lost against the new matchup, and avoid repeated"
+                        " switches without a reason. consecutive_voluntary_switch_count"
+                        " counts our consecutive chosen switches, excluding forced ones."
+                        " recent_opponent_actions lists only observed move uses and switches;"
+                        " repeated moves remain repeated evidence. last_active_opponent_move_id"
+                        " refers to a move previously used by the current active opponent,"
+                        " not a prediction. Switch HP before and after is net turn change,"
+                        " not necessarily damage from the opponent. These are type and entry annotations,"
+                        " not damage or survival predictions."
+                        " opponent_set_estimate is a sampled randbats set prior for the"
+                        " current opponent: observed_move_ids are known facts, while"
+                        " possible_moves are hypothetical unrevealed moves."
+                        " sampled_set_fraction measures occurrence among compatible"
+                        " generated sets, not the chance of choosing that move now."
+                        " unavailable or no_matching_sets means there is no reliable"
+                        " estimate; never treat it as proof a move is impossible."
                     ),
                     "criteria": criteria,
                 }
@@ -199,16 +227,12 @@ class JevSelectionPolicy:
             if label in option_lookup
         }
 
-        gateway_metadata = response_data.get(
-            "providerMetadata", {}
-        ).get("gateway", {})
-
         return PolicySelection(
             action_id=selected_action.id,
             probabilities=probabilities,
             confidence=answer.get("confidence"),
             model=response_data.get("model", self.MODEL),
-            generation_id=gateway_metadata.get("generationId"),
+            generation_id=None,
         )
 
     

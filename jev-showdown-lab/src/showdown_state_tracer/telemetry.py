@@ -14,12 +14,16 @@ class Telemetry:
             exist_ok=True,
         )
 
+    # Parameters: decision_record holds the chosen action and annotated state.
+    # Purpose: persist the decision with its versioned telemetry envelope.
+    # Returns: None after appending a JSON record.
+    # Pipeline: records the Jev input context and outcome after choosing an order.
     def write(
         self,
         decision_record: DecisionRecord,
     ) -> None:
         payload = {
-            "schema_version": 5,
+            "schema_version": 9,
             "timestamp": datetime.now(
                 timezone.utc
             ).isoformat(),
