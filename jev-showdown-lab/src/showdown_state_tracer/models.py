@@ -41,6 +41,7 @@ class PokemonSnapshot:
     active: bool | None
     fainted: bool
     revealed: bool  # whether the opponent has seen this pokemon's species
+    revealed_tera_type: str | None = None  # only populated after terastallization
     
 @dataclass(frozen=True, slots=True)
 class FieldSnapshot:
@@ -153,6 +154,25 @@ class OpponentActionSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class PossibleMoveEstimate:
+    move_id: str
+    sampled_set_fraction: float
+
+
+@dataclass(frozen=True, slots=True)
+class OpponentSetEstimate:
+    species: str
+    status: Literal["available", "no_matching_sets", "unavailable"]
+    observed_move_ids: list[str]
+    possible_moves: list[PossibleMoveEstimate]
+    matching_set_count: int
+    sampled_set_count: int
+    omitted_move_count: int
+    source: str
+    data_retrieved_at: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class DecisionSnapshot:
     # Information about the decision state.
     
@@ -161,7 +181,8 @@ class DecisionSnapshot:
     forced_switch: bool
     recent_actions: list[ActionMemorySnapshot] = field(default_factory=list)
     recent_opponent_actions: list[OpponentActionSnapshot] = field(default_factory=list)
-    schema_version: int = 6
+    opponent_set_estimate: OpponentSetEstimate | None = None
+    schema_version: int = 7
     
 @dataclass(frozen=True, slots=True)
 class DecisionRecord:

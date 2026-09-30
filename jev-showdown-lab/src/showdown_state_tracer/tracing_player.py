@@ -4,6 +4,7 @@ from poke_env.data import to_id_str
 from collections import defaultdict
 
 from showdown_state_tracer.battle_memory import BattleMemory
+from showdown_state_tracer.randbats_data import RandbatsDataProvider
 from showdown_state_tracer.models import ActionOption, DecisionRecord
 
 import random
@@ -17,13 +18,23 @@ from showdown_state_tracer.telemetry import (
 )
 
 class TracingRandomPlayer(RandomPlayer):
-    def __init__(self, trace_writer: Telemetry, selection_policy, seed: int | None = None, **player_options,) -> None:
+    # Parameters: trace_writer stores decisions; selection_policy chooses orders;
+    # seed controls fallback; randbats_provider supplies cached set data;
+    # player_options are forwarded to poke-env's RandomPlayer.
+    # Purpose: configure an agent that annotates each observed battle choice.
+    # Returns: a playable instance with battle memory and a shared data provider.
+    # Pipeline: constructed once, then choose_move processes each battle request.
+    def __init__(
+        self, trace_writer: Telemetry, selection_policy, seed: int | None = None,
+        randbats_provider: RandbatsDataProvider | None = None, **player_options,
+    ) -> None:
         super().__init__(**player_options)
         self.trace_writer = trace_writer
         self.random = random.Random(seed)
         self.selection_policy = selection_policy
         self._decision_counts: dict[str, int] = defaultdict(int)
         self._memory = BattleMemory()
+        self.randbats_provider = randbats_provider or RandbatsDataProvider()
 
     async def _handle_battle_message(self, split_messages):
         # poke-env processes a request (and calls choose_move) inside this batch.
@@ -75,12 +86,20 @@ class TracingRandomPlayer(RandomPlayer):
                     tag, turn, actor, "move", move_id=message[3],
                 )
         
+    # Parameters: battle is poke-env's current legal decision and public state.
+    # Purpose: resolve observations, annotate the opponent, and select an action.
+    # Returns: a poke-env order for the validated legal move or switch.
+    # Pipeline: loads format data once, sends the decision to Jev, and logs it.
     async def choose_move(self, battle: Battle) -> int:
         battle_id = battle.battle_tag
         self._memory.resolve(battle)
+        provider = getattr(self, "randbats_provider", None)
+        dataset = await provider.get_format(battle.format) if provider else None
+        dataset_args = {"randbats_dataset": dataset} if provider else {}
         decision = battle_to_decision_snapshot(
             battle, recent_actions=self._memory.recent_actions(battle_id),
             recent_opponent_actions=self._memory.recent_opponent_actions(battle_id),
+            **dataset_args,
         )
 
         self._decision_counts[battle_id] += 1

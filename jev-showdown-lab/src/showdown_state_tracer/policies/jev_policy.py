@@ -126,6 +126,10 @@ class JevSelectionPolicy:
                     f"{self._next_request_time - time.monotonic():.1f}s"
                 )
 
+    # Parameters: decision contains public battle facts, legal actions, and set estimates.
+    # Purpose: send a single compact Jev choice request and validate its answer.
+    # Returns: the selected legal action id with Jev's confidence and probabilities.
+    # Pipeline: consumes the annotated decision after snapshot construction.
     async def select(
         self,
         decision: DecisionSnapshot,
@@ -156,6 +160,10 @@ class JevSelectionPolicy:
                 **asdict(decision.state),
                 "recent_actions": [asdict(action) for action in decision.recent_actions],
                 "recent_opponent_actions": [asdict(action) for action in decision.recent_opponent_actions],
+                "opponent_set_estimate": (
+                    asdict(decision.opponent_set_estimate)
+                    if decision.opponent_set_estimate is not None else None
+                ),
             },
             "questions": {
                 "action": {
@@ -187,6 +195,13 @@ class JevSelectionPolicy:
                         " not a prediction. Switch HP before and after is net turn change,"
                         " not necessarily damage from the opponent. These are type and entry annotations,"
                         " not damage or survival predictions."
+                        " opponent_set_estimate is a sampled randbats set prior for the"
+                        " current opponent: observed_move_ids are known facts, while"
+                        " possible_moves are hypothetical unrevealed moves."
+                        " sampled_set_fraction measures occurrence among compatible"
+                        " generated sets, not the chance of choosing that move now."
+                        " unavailable or no_matching_sets means there is no reliable"
+                        " estimate; never treat it as proof a move is impossible."
                     ),
                     "criteria": criteria,
                 }
