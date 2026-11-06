@@ -7,6 +7,7 @@ from poke_env.battle import Battle
 from showdown_state_tracer.switch_context import annotate_switch
 from showdown_state_tracer.randbats_context import annotate_opponent_sets
 from showdown_state_tracer.randbats_data import RandbatsDataset
+from showdown_state_tracer.move_descriptions import get_move_short_description
 
 def effectiveness_label(multiplier: float) -> str:
     if multiplier == 0:
@@ -57,7 +58,12 @@ def _snapshot_to_dict(effects: Mapping[Enum, int]) -> dict[str, int]:
         for effect, value in sorted(effects.items(), key=lambda item: item[0].name
         )
     }
-def move_to_snapshot(move: Move) -> MoveSnapshot:
+def move_to_snapshot(
+    move: Move, *, short_description: str | None = None,
+) -> MoveSnapshot:
+    """Copy move facts and look up a description unless one is supplied."""
+    if short_description is None:
+        short_description = get_move_short_description(move.id, move.gen)
     # poke-env puts Calm Mind's boosts in boosts (target SELF), but Close
     # Combat's self penalties in self_boost (target NORMAL).
     self_boosts = move.self_boost
@@ -80,7 +86,8 @@ def move_to_snapshot(move: Move) -> MoveSnapshot:
         inflicted_status=move.status.name if move.status is not None else None,
         move_flags=sorted(move.flags),
         ignore_ability=move.ignore_ability,
-        target=move.target.name if move.target is not None else None
+        target=move.target.name if move.target is not None else None,
+        short_description=short_description,
     )
     
 # Parameters: pokemon is the poke-env object for one battle participant.

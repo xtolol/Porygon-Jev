@@ -62,7 +62,44 @@ Jev receives snapshots rather than live poke-env objects. Its result is validate
 
 Each legal switch carries type matchups, visible entry hazards, boosts lost on switching, the count of consecutive voluntary switches, and the most recent observed move when its user matches the current active opponent. The type matchups and possible STAB are typing evidence, not damage estimates or predictions.
 
-`recent_actions` holds up to three of our resolved selections. A switch entry includes its source, destination, whether the selection was forced, and the selected Pokémon's HP before and after the turn. That HP difference is a net observation and may include hazards, healing, or other effects. `recent_opponent_actions` holds up to six observed opponent move and switch events from Showdown's battle messages; repeated uses remain separate events. Both histories are scoped to one battle and cleared when it finishes. The decision schema is 7 and the telemetry record schema is 9.
+`recent_actions` holds up to three of our resolved selections. A switch entry includes its source, destination, whether the selection was forced, and the selected Pokémon's HP before and after the turn. That HP difference is a net observation and may include hazards, healing, or other effects. `recent_opponent_actions` holds up to six observed opponent move and switch events from Showdown's battle messages; repeated uses remain separate events. Both histories are scoped to one battle and cleared when it finishes. The decision schema is 8 and the telemetry record schema is 10.
+
+### Move descriptions (v0.3b)
+
+Every move converted by `move_to_snapshot` includes `short_description`, copied from Pokémon Showdown's resolved English Gen 9 move text when available. For example, Recover carries `"Heals the user by 50% of its max HP."`. Descriptions summarize general mechanics and complement the existing structured move and battle context. They appear in Jev's battle state, action criteria, and decision telemetry.
+
+Descriptions are populated on legal move options, our active Pokémon and team, switch candidates, and revealed opponent moves. Only moves already present in those snapshots are described; this does not reveal additional opponent moves. Opponent action histories and set estimates still contain move IDs without descriptions. The lookup uses each move's generation; unknown move IDs, absent descriptions, and generations other than Gen 9 return `null`, without removing any legal action. A missing or invalid JSON resource emits one warning when first loaded and disables descriptions for that process.
+
+The package bundles `src/showdown_state_tracer/data/move_descriptions_gen9.json` and caches it in memory on first lookup. This feature performs no network requests or Node processes during a battle. The JSON records its dataset schema version, generation, language, upstream source, and Showdown Git revision; the upstream MIT license is included alongside it.
+
+To refresh descriptions, first rebuild a clean Showdown checkout after updating its source. From the `jev-showdown-lab` directory, using the default sibling checkout:
+
+```bash
+npm --prefix ../pokemon-showdown ci
+npm --prefix ../pokemon-showdown run build
+node scripts/export_move_descriptions.cjs
+```
+
+For a checkout elsewhere, supply its root explicitly:
+
+```bash
+node scripts/export_move_descriptions.cjs --showdown-path /path/to/pokemon-showdown
+```
+
+The exporter enumerates `Dex.mod("gen9").moves.all()` and joins canonical IDs to `dex.loadTextData("en").Moves[id].shortDesc`. It exports nonempty descriptions, sorts IDs, and omits timestamps so repeated exports from the same built checkout are identical. Missing descriptions are reported. An export failure preserves the existing JSON; uncommitted changes under Showdown's `sim/` or `data/` must be resolved before export so the recorded revision identifies the source. Rebuilds are required after source changes because the exporter reads compiled Dex data.
+
+Review and commit refreshed JSON with the code change, then restart the agent to reload it. To inspect an export without replacing the bundled resource, pass `--output /path/to/preview.json`.
+
+The runtime call flow is:
+
+```text
+battle_to_decision_snapshot
+  → battle_to_snapshot / battle_to_action_option
+    → pokemon_to_snapshot / move_to_snapshot
+      → get_move_short_description(move.id, move.gen) (cached packaged JSON)
+  → JevSelectionPolicy.select → battle state and action criteria
+  → Telemetry.write → decision state and legal actions
+```
 
 ### Randbats opponent set estimates
 
@@ -273,6 +310,16 @@ A small best-of-three experiment against `RandomPlayer` produced two Jev wins an
 The wins were decisive when high-powered attacks could immediately knock out opposing Pokémon. The loss exposed a longer-horizon weakness: a Mandibuzz using Toxic and Roost repeatedly recovered damage while residual poison wore down five of Jev’s Pokémon.
 
 This suggests that the current policy is effective at obvious immediate choices but lacks sufficient Pokémon-specific tactical context and temporal reasoning. Three battles are not enough to establish a reliable win rate.
+
+## Tests
+
+Run the test suite from `jev-showdown-lab` with the Python environment activated:
+
+```bash
+python -m pytest tests -q
+```
+
+Tests use mocked Jev responses and local fixtures; no API key or running Showdown server is required. Exporter tests require Node and Git and skip when either is unavailable. Description coverage includes six move categories, team and revealed opponent moves, forced switches, unavailable data, offline lookup, and JSON request and telemetry serialization.
 
 ## Development roadmap
 

@@ -23,7 +23,7 @@ def decision_for(ability):
     ours = pokemon("Ursaluna")
     opponent = pokemon("Electrode", ability)
     battle = SimpleNamespace(
-        battle_tag="battle-soundproof", format="gen9randombattle", turn=5,
+        battle_tag="battle-soundproof", format="gen9randombattle", turn=5, gen=9,
         active_pokemon=ours, team={"p1: Ursaluna": ours},
         opponent_active_pokemon=opponent, opponent_team={"p2: Electrode": opponent},
         weather={}, fields={}, side_conditions={}, opponent_side_conditions={},

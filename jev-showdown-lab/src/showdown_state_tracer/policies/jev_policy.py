@@ -177,6 +177,8 @@ class JevSelectionPolicy:
                         " Unchanged HP does not prove immunity: the move may have missed,"
                         " been blocked, or been offset by healing. For utility moves,"
                         " consider self_boosts, heal_fraction and inflicted_status."
+                        " short_description summarizes general move mechanics; consider"
+                        " it alongside the structured battle-specific context."
                         " The raw boosts field follows the move target and can apply"
                         " to the user or the opponent."
                         " Consider the opponent's revealed ability together with each"

@@ -25,6 +25,7 @@ class MoveSnapshot:
     ignore_ability: bool = False
     
     is_protect_move: bool = False
+    short_description: str | None = None  # Gen 9 mechanics text, when available
 
 @dataclass(frozen=True, slots=True)
 class PokemonSnapshot:
@@ -182,7 +183,7 @@ class DecisionSnapshot:
     recent_actions: list[ActionMemorySnapshot] = field(default_factory=list)
     recent_opponent_actions: list[OpponentActionSnapshot] = field(default_factory=list)
     opponent_set_estimate: OpponentSetEstimate | None = None
-    schema_version: int = 7
+    schema_version: int = 8
     
 @dataclass(frozen=True, slots=True)
 class DecisionRecord:
