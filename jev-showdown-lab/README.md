@@ -77,13 +77,13 @@ To refresh descriptions, first rebuild a clean Showdown checkout after updating 
 ```bash
 npm --prefix ../pokemon-showdown ci
 npm --prefix ../pokemon-showdown run build
-node scripts/export_move_descriptions.cjs
+node scripts/export_dex_descriptions.cjs --kind moves
 ```
 
 For a checkout elsewhere, supply its root explicitly:
 
 ```bash
-node scripts/export_move_descriptions.cjs --showdown-path /path/to/pokemon-showdown
+node scripts/export_dex_descriptions.cjs --kind moves --showdown-path /path/to/pokemon-showdown
 ```
 
 The exporter enumerates `Dex.mod("gen9").moves.all()` and joins canonical IDs to `dex.loadTextData("en").Moves[id].shortDesc`. It exports nonempty descriptions, sorts IDs, and omits timestamps so repeated exports from the same built checkout are identical. Missing descriptions are reported. An export failure preserves the existing JSON; uncommitted changes under Showdown's `sim/` or `data/` must be resolved before export so the recorded revision identifies the source. Rebuilds are required after source changes because the exporter reads compiled Dex data.
@@ -243,6 +243,10 @@ Run the Jev battle example from the `jev-showdown-lab` directory:
 ```bash
 python examples/jev_battle.py
 ```
+
+Set `MATCH_MODE` near the top of `examples/jev_battle.py` to `"jev_vs_random"` (the default) or `"jev_vs_jev"`. Set `N_BATTLES` to control how many battles run. In Jev-versus-Jev mode, both agents share the Jev API policy to serialize requests and reuse the same randbats data provider.
+
+Telemetry always goes to `examples/logs/decisions.jsonl`, regardless of the working directory. The second Jev agent writes to `examples/logs/opponent_decisions.jsonl`, keeping each agent's decision sequence separate.
 
 The terminal should display selections resembling:
 

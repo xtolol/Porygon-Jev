@@ -20,9 +20,6 @@ visualization = [
     "pandas>=2.2",
 ]
 
-[project.scripts]
-showdown-state-tracer = "showdown_state_tracer.main:main"
-
 [tool.setuptools]
 package-dir = {"" = "src"}
 

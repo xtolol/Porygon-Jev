@@ -12,8 +12,7 @@ from showdown_state_tracer import move_descriptions
 from showdown_state_tracer.move_descriptions import get_move_short_description
 
 
-EXPORTER = Path(__file__).resolve().parents[1] / "scripts" / "export_move_descriptions.cjs"
-DEX_EXPORTER = EXPORTER.with_name("export_dex_descriptions.cjs")
+EXPORTER = Path(__file__).resolve().parents[1] / "scripts" / "export_dex_descriptions.cjs"
 
 
 @pytest.fixture(autouse=True)
@@ -176,9 +175,8 @@ exports.Dex = {
 
 
 def export(checkout, output, kind=None):
-    exporter = EXPORTER if kind is None else DEX_EXPORTER
     return subprocess.run([
-        "node", str(exporter), "--showdown-path", str(checkout), "--output", str(output),
+        "node", str(EXPORTER), "--showdown-path", str(checkout), "--output", str(output),
         *(["--kind", kind] if kind is not None else []),
     ], capture_output=True, text=True)
 

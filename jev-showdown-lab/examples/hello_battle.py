@@ -7,7 +7,7 @@ from pathlib import Path
 
 async def main():
     player_1 = TracingRandomPlayer(
-        trace_writer=Telemetry(path=Path("logs/decisions.jsonl")),
+        trace_writer=Telemetry(path=Path(__file__).resolve().parent / "logs" / "decisions.jsonl"),
         max_concurrent_battles=1,
         server_configuration=LOCAL_SERVER
     )
