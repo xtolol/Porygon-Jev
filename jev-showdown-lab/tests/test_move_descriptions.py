@@ -13,6 +13,7 @@ from showdown_state_tracer.move_descriptions import get_move_short_description
 
 
 EXPORTER = Path(__file__).resolve().parents[1] / "scripts" / "export_move_descriptions.cjs"
+DEX_EXPORTER = EXPORTER.with_name("export_dex_descriptions.cjs")
 
 
 @pytest.fixture(autouse=True)
@@ -134,11 +135,29 @@ exports.Dex = {
                 {id: 'missing', exists: true},
                 {id: 'recover', exists: true},
             ]},
+            abilities: {all: () => [
+                {id: 'soundproof', exists: true},
+                {id: 'missing', exists: true},
+                {id: 'levitate', exists: true},
+            ]},
+            items: {all: () => [
+                {id: 'lifeorb', exists: true},
+                {id: 'missing', exists: true},
+                {id: 'leftovers', exists: true},
+            ]},
             loadTextData(language) {
                 if (language !== 'en') throw new Error('Wrong language');
                 return {Moves: {
                     recover: {shortDesc: 'Heals the user by 50% of its max HP.'},
                     uturn: {shortDesc: 'User switches out after damaging the target.'},
+                    missing: {shortDesc: ''},
+                }, Abilities: {
+                    soundproof: {shortDesc: 'Immune to sound-based moves.'},
+                    levitate: {shortDesc: 'Immune to Ground-type attacks.'},
+                    missing: {shortDesc: ''},
+                }, Items: {
+                    lifeorb: {shortDesc: 'Boosts attacks at the cost of HP.'},
+                    leftovers: {shortDesc: 'Restores HP each turn.'},
                     missing: {shortDesc: ''},
                 }};
             },
@@ -156,15 +175,18 @@ exports.Dex = {
     return checkout
 
 
-def export(checkout, output):
+def export(checkout, output, kind=None):
+    exporter = EXPORTER if kind is None else DEX_EXPORTER
     return subprocess.run([
-        "node", str(EXPORTER), "--showdown-path", str(checkout), "--output", str(output),
+        "node", str(exporter), "--showdown-path", str(checkout), "--output", str(output),
+        *(["--kind", kind] if kind is not None else []),
     ], capture_output=True, text=True)
 
 
-def test_export_joins_text_sorts_ids_and_is_deterministic(showdown_checkout, tmp_path):
+@pytest.mark.parametrize("kind", [None, "moves", "abilities", "items"])
+def test_export_joins_text_sorts_ids_and_is_deterministic(showdown_checkout, tmp_path, kind):
     output = tmp_path / "descriptions.json"
-    first = export(showdown_checkout, output)
+    first = export(showdown_checkout, output, kind)
     assert first.returncode == 0, first.stderr
     original = output.read_bytes()
     data = json.loads(original)
@@ -177,16 +199,31 @@ def test_export_joins_text_sorts_ids_and_is_deterministic(showdown_checkout, tmp
         capture_output=True, text=True, check=True,
     ).stdout.strip()
     assert data["showdown_revision"] == revision
-    assert list(data["moves"]) == ["recover", "uturn"]
-    assert data["moves"]["recover"] == resource_data()["moves"]["recover"]
+    expected = {
+        "moves": {
+            "recover": resource_data()["moves"]["recover"],
+            "uturn": "User switches out after damaging the target.",
+        },
+        "abilities": {
+            "levitate": "Immune to Ground-type attacks.",
+            "soundproof": "Immune to sound-based moves.",
+        },
+        "items": {
+            "leftovers": "Restores HP each turn.",
+            "lifeorb": "Boosts attacks at the cost of HP.",
+        },
+    }[kind or "moves"]
+    assert data[kind or "moves"] == expected
+    assert list(data[kind or "moves"]) == sorted(expected)
     assert "missing" in first.stdout
-    second = export(showdown_checkout, output)
+    second = export(showdown_checkout, output, kind)
     assert second.returncode == 0, second.stderr
     assert output.read_bytes() == original
 
 
 @pytest.mark.parametrize("failure", ["unbuilt", "broken_dex", "dirty_source"])
-def test_failed_export_preserves_existing_resource(showdown_checkout, tmp_path, failure):
+@pytest.mark.parametrize("kind", [None, "abilities", "items"])
+def test_failed_export_preserves_existing_resource(showdown_checkout, tmp_path, failure, kind):
     output = tmp_path / "descriptions.json"
     output.write_text("existing export", encoding="utf-8")
     dex_path = showdown_checkout / "dist" / "sim" / "dex.js"
@@ -198,10 +235,19 @@ def test_failed_export_preserves_existing_resource(showdown_checkout, tmp_path, 
         source = showdown_checkout / "data" / "moves.ts"
         source.parent.mkdir()
         source.write_text("uncommitted data", encoding="utf-8")
-    result = export(showdown_checkout, output)
+    result = export(showdown_checkout, output, kind)
     assert result.returncode != 0
-    assert "Move description export failed" in result.stderr
+    assert "Dex description export failed" in result.stderr
     if failure == "unbuilt":
         assert "npm run build" in result.stderr
     assert output.read_text(encoding="utf-8") == "existing export"
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_unknown_export_kind_is_rejected_before_replacing_data(showdown_checkout, tmp_path):
+    output = tmp_path / "descriptions.json"
+    output.write_text("existing export", encoding="utf-8")
+    result = export(showdown_checkout, output, "species")
+    assert result.returncode != 0
+    assert "Unknown kind" in result.stderr
+    assert output.read_text(encoding="utf-8") == "existing export"

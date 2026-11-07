@@ -43,6 +43,8 @@ class PokemonSnapshot:
     fainted: bool
     revealed: bool  # whether the opponent has seen this pokemon's species
     revealed_tera_type: str | None = None  # only populated after terastallization
+    ability_short_description: str | None = None
+    item_short_description: str | None = None
     
 @dataclass(frozen=True, slots=True)
 class FieldSnapshot:
@@ -183,7 +185,7 @@ class DecisionSnapshot:
     recent_actions: list[ActionMemorySnapshot] = field(default_factory=list)
     recent_opponent_actions: list[OpponentActionSnapshot] = field(default_factory=list)
     opponent_set_estimate: OpponentSetEstimate | None = None
-    schema_version: int = 8
+    schema_version: int = 9
     
 @dataclass(frozen=True, slots=True)
 class DecisionRecord:

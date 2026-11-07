@@ -13,7 +13,7 @@ from showdown_state_tracer.snapshot import battle_to_decision_snapshot, move_to_
 
 def pokemon(species, ability=None):
     return SimpleNamespace(
-        types=[], species=species, level=100, item=None, ability=ability,
+        types=[], species=species, level=100, item=None, ability=ability, gen=9,
         status=None, moves={}, current_hp_fraction=1.0, boosts={}, active=True,
         fainted=False, revealed=True, damage_multiplier=lambda move: 1.0,
     )

@@ -59,7 +59,7 @@ def assert_state_moves_described(state):
 def test_all_move_descriptions_reach_jev_and_telemetry(tmp_path):
     battle = battle_with_shared_move()
     decision = battle_to_decision_snapshot(battle)
-    assert decision.schema_version == 8
+    assert decision.schema_version == 9
     assert [action.id for action in decision.legal_actions] == [
         "move:0:recover", "move:1:toxic", "switch:0:gastrodon",
     ]
@@ -112,8 +112,8 @@ def test_all_move_descriptions_reach_jev_and_telemetry(tmp_path):
     path = tmp_path / "decisions.jsonl"
     Telemetry(path).write(record)
     logged = json.loads(path.read_text(encoding="utf-8"))
-    assert logged["schema_version"] == 10
-    assert logged["decision"]["schema_version"] == 8
+    assert logged["schema_version"] == 11
+    assert logged["decision"]["schema_version"] == 9
     assert logged["selected_action_id"] == "move:0:recover"
     assert logged["decision"]["legal_actions"][0]["move"]["short_description"] == (
         RECOVER_DESCRIPTION

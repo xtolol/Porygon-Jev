@@ -55,7 +55,7 @@ def test_each_legal_switch_gets_distinct_type_and_entry_context():
     gastrodon = switch(decision, "gastrodon").switch_context
     gyarados = switch(decision, "gyarados").switch_context
 
-    assert decision.schema_version == 8
+    assert decision.schema_version == 9
     assert decision.legal_actions[0].switch_context is None
     assert [(m.source, m.multiplier) for m in gastrodon.revealed_move_matchups] == [
         ("thunderbolt", 0)

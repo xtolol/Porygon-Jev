@@ -8,6 +8,10 @@ from showdown_state_tracer.switch_context import annotate_switch
 from showdown_state_tracer.randbats_context import annotate_opponent_sets
 from showdown_state_tracer.randbats_data import RandbatsDataset
 from showdown_state_tracer.move_descriptions import get_move_short_description
+from showdown_state_tracer.pokemon_descriptions import (
+    get_ability_short_description,
+    get_item_short_description,
+)
 
 def effectiveness_label(multiplier: float) -> str:
     if multiplier == 0:
@@ -95,12 +99,14 @@ def move_to_snapshot(
 # Returns: an immutable PokemonSnapshot containing only revealed opponent facts.
 # Pipeline: feeds both the regular Jev state and randbats set filtering.
 def pokemon_to_snapshot(pokemon: Pokemon) -> PokemonSnapshot:
+    ability = pokemon.ability
+    item = pokemon.item
     return PokemonSnapshot(
         types=[t.name for t in pokemon.types],
         species=pokemon.species,
         level=pokemon.level,
-        item=pokemon.item,
-        ability=pokemon.ability,
+        item=item,
+        ability=ability,
         status=pokemon.status.name if pokemon.status is not None else None,
         moves=[move_to_snapshot(m) for m in pokemon.moves.values()],
         current_hp_fraction=pokemon.current_hp_fraction,
@@ -114,6 +120,8 @@ def pokemon_to_snapshot(pokemon: Pokemon) -> PokemonSnapshot:
             and getattr(pokemon, "tera_type", None) is not None
             else None
         ),
+        ability_short_description=get_ability_short_description(ability, pokemon.gen),
+        item_short_description=get_item_short_description(item, pokemon.gen),
     )
 
 def field_to_snapshot(battle: Battle) -> FieldSnapshot:
