@@ -1,0 +1,449 @@
+# Jev Showdown Lab
+
+An experimental Python project investigating whether [TypeSafe AI's Jev](https://docs.typesafe.ai/) can act as a decision policy for turn-based Pokémon Showdown battles.
+
+The project uses [poke-env](https://poke-env.readthedocs.io/) to connect agents to a local Pokémon Showdown server, convert live battles into JSON-compatible snapshots, present legal actions to Jev through TypeSafe's API, execute the selected action, and record decision telemetry.
+
+## Project status
+
+This is an early viability prototype rather than a competitive Pokémon agent.
+
+The current implementation can:
+
+- Connect two poke-env agents to a local Pokémon Showdown server.
+- Convert battle, Pokémon, move, field and action state into immutable snapshots.
+- Enumerate legal moves and switches.
+- Send the current state and legal actions to Jev.
+- Map Jev’s selected action back to a live poke-env battle order.
+- Retry transient TypeSafe API failures.
+- Fall back to another policy when configured.
+- Record each decision and its selection source.
+- Run local battles against `RandomPlayer`.
+
+Preliminary experiments suggest that Jev handles straightforward damage-oriented positions reasonably well but currently struggles with longer-term strategies such as recovery and Toxic stall. These observations are exploratory and are not yet statistically meaningful benchmarks.
+
+## Architecture
+
+```text
+Pokémon Showdown
+        │
+        ▼
+     poke-env
+        │
+        ▼
+Live Battle object
+        │
+        ▼
+DecisionSnapshot
+├── BattleStateSnapshot
+├── Pokémon snapshots
+├── Move snapshots
+└── Legal ActionOptions
+        │
+        ▼
+Jev selection policy
+        │
+        ▼
+Selected action ID
+        │
+        ▼
+Live Move or Pokémon
+        │
+        ▼
+poke-env BattleOrder
+        │
+        ▼
+Decision telemetry
+```
+
+Jev receives snapshots rather than live poke-env objects. Its result is validated against the legal actions before being converted back into a Showdown order.
+
+### Switching memory (v0.3b)
+
+Each legal switch carries type matchups, visible entry hazards, boosts lost on switching, the count of consecutive voluntary switches, and the most recent observed move when its user matches the current active opponent. The type matchups and possible STAB are typing evidence, not damage estimates or predictions.
+
+`recent_actions` holds up to three of our resolved selections. A switch entry includes its source, destination, whether the selection was forced, and the selected Pokémon's HP before and after the turn. That HP difference is a net observation and may include hazards, healing, or other effects. `recent_opponent_actions` holds up to six observed opponent move and switch events from Showdown's battle messages; repeated uses remain separate events. Both histories are scoped to one battle and cleared when it finishes. The decision schema is 8 and the telemetry record schema is 10.
+
+### Move descriptions (v0.3b)
+
+Every move converted by `move_to_snapshot` includes `short_description`, copied from Pokémon Showdown's resolved English Gen 9 move text when available. For example, Recover carries `"Heals the user by 50% of its max HP."`. Descriptions summarize general mechanics and complement the existing structured move and battle context. They appear in Jev's battle state, action criteria, and decision telemetry.
+
+Descriptions are populated on legal move options, our active Pokémon and team, switch candidates, and revealed opponent moves. Only moves already present in those snapshots are described; this does not reveal additional opponent moves. Opponent action histories and set estimates still contain move IDs without descriptions. The lookup uses each move's generation; unknown move IDs, absent descriptions, and generations other than Gen 9 return `null`, without removing any legal action. A missing or invalid JSON resource emits one warning when first loaded and disables descriptions for that process.
+
+The package bundles `src/showdown_state_tracer/data/move_descriptions_gen9.json` and caches it in memory on first lookup. This feature performs no network requests or Node processes during a battle. The JSON records its dataset schema version, generation, language, upstream source, and Showdown Git revision; the upstream MIT license is included alongside it.
+
+To refresh descriptions, first rebuild a clean Showdown checkout after updating its source. From the `jev-showdown-lab` directory, using the default sibling checkout:
+
+```bash
+npm --prefix ../pokemon-showdown ci
+npm --prefix ../pokemon-showdown run build
+node scripts/export_dex_descriptions.cjs --kind moves
+```
+
+For a checkout elsewhere, supply its root explicitly:
+
+```bash
+node scripts/export_dex_descriptions.cjs --kind moves --showdown-path /path/to/pokemon-showdown
+```
+
+The exporter enumerates `Dex.mod("gen9").moves.all()` and joins canonical IDs to `dex.loadTextData("en").Moves[id].shortDesc`. It exports nonempty descriptions, sorts IDs, and omits timestamps so repeated exports from the same built checkout are identical. Missing descriptions are reported. An export failure preserves the existing JSON; uncommitted changes under Showdown's `sim/` or `data/` must be resolved before export so the recorded revision identifies the source. Rebuilds are required after source changes because the exporter reads compiled Dex data.
+
+Review and commit refreshed JSON with the code change, then restart the agent to reload it. To inspect an export without replacing the bundled resource, pass `--output /path/to/preview.json`.
+
+The runtime call flow is:
+
+```text
+battle_to_decision_snapshot
+  → battle_to_snapshot / battle_to_action_option
+    → pokemon_to_snapshot / move_to_snapshot
+      → get_move_short_description(move.id, move.gen) (cached packaged JSON)
+  → JevSelectionPolicy.select → battle state and action criteria
+  → Telemetry.write → decision state and legal actions
+```
+
+### Randbats opponent set estimates
+
+For `gen9randombattle`, the player downloads [pkmn/randbats complete sampled sets](https://github.com/pkmn/randbats/blob/main/data/full/gen9randombattle.json) once and stores them in the local cache at `~/.cache/porygon-jev/randbats/` (or under `$XDG_CACHE_HOME/porygon-jev/randbats/`). It refreshes after 24 hours; if a refresh fails, it can still use its cached copy. The example warms this cache before starting a battle. Other formats receive no set estimate.
+
+On each decision, the current opponent's species selects a group of complete sets in memory. Revealed moves, known item and ability, observed level, and a Tera type *only after terastallization* filter those sets. A move's `sampled_set_fraction` is the number of surviving sampled sets containing that unrevealed move divided by the total surviving sample count. At most eight possible moves are included in the single `opponent_set_estimate` attached to the decision; `omitted_move_count` records any others. Jev receives revealed moves separately in `PokemonSnapshot.moves` and `observed_move_ids`.
+
+These fractions describe sampled generated sets, not the chance that the opponent chooses a move on this turn. Missing data and zero matching sets produce explicit `unavailable` and `no_matching_sets` results. The estimate includes the data download timestamp, so an offline cached copy can be identified. The role-based `stats` JSON is not queried for these conditional frequencies because its move marginals do not retain full move combinations. No numeric stat or damage estimate is produced by this feature.
+
+## Requirements
+
+- Python 3.12
+- Node.js 22 or newer
+- A local Pokémon Showdown server
+- A TypeSafe API key
+- macOS, Windows or Linux
+
+The package currently supports Python:
+
+```text
+>=3.12,<3.14
+```
+
+## Python installation
+
+Clone the repository and enter its root directory:
+
+```bash
+git clone <repository-url>
+cd jev-showdown-lab
+```
+
+Create and activate a virtual environment on macOS or Linux:
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+```
+
+On Windows PowerShell:
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+Install the project and its dependencies:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install -e .
+```
+
+## Local Pokémon Showdown server
+
+Clone Pokémon Showdown separately:
+
+```bash
+git clone https://github.com/smogon/pokemon-showdown.git
+cd pokemon-showdown
+npm ci
+cp config/config-example.js config/config.js
+```
+
+Start it on the default port 8000 with guest authentication disabled for
+local bot battles:
+
+```bash
+node pokemon-showdown start --no-security
+```
+
+Keep the server terminal open while running the Python agent.
+
+Confirm that it is listening on macOS:
+
+```bash
+lsof -nP -iTCP:8000 -sTCP:LISTEN
+```
+
+The project's `LOCAL_SERVER` configuration points to:
+
+```text
+ws://127.0.0.1:8000/showdown/websocket
+```
+
+The example players use generated guest names and no Showdown passwords. Without
+`--no-security`, Showdown rejects their empty authentication assertions with
+`Your authentication token was invalid`. Restart the server with this flag
+before retrying the battle. Use it only on a private local development server.
+
+## TypeSafe API configuration
+
+Create an API key in your TypeSafe account.
+
+Set it for the current macOS or Linux terminal:
+
+```bash
+export TYPESAFE_API_KEY="your-api-key"
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:TYPESAFE_API_KEY="your-api-key"
+```
+
+Never commit the key to the repository.
+
+The policy calls:
+
+```text
+POST https://api.typesafe.ai/v1/systemone
+```
+
+using the model:
+
+```text
+jev-latest
+```
+
+Each request contains:
+
+- A structured battle state.
+- A bounded choice question.
+- One criterion for every legal action.
+
+Jev returns a selected option, probability distribution and confidence value.
+
+Check TypeSafe's API documentation and account dashboard for current model availability and rate limits before running large experiments.
+
+## Running a battle
+
+Start the local Showdown server first, then activate the Python environment:
+
+```bash
+source .venv/bin/activate
+```
+
+Run the Jev battle example from the `jev-showdown-lab` directory:
+
+```bash
+python examples/jev_battle.py
+```
+
+Set `MATCH_MODE` near the top of `examples/jev_battle.py` to `"jev_vs_random"` (the default) or `"jev_vs_jev"`. Set `N_BATTLES` to control how many battles run. In Jev-versus-Jev mode, both agents share the Jev API policy to serialize requests and reuse the same randbats data provider.
+
+Telemetry always goes to `examples/logs/decisions.jsonl`, regardless of the working directory. The second Jev agent writes to `examples/logs/opponent_decisions.jsonl`, keeping each agent's decision sequence separate.
+
+The terminal should display selections resembling:
+
+```text
+Jev selected: move:2:thunderbolt
+Confidence: 0.72
+Selected action: move:2:thunderbolt | source: jev
+```
+
+Possible selection sources include:
+
+```text
+jev
+random_fallback
+heuristic_fallback_429
+heuristic_fallback_503
+```
+
+## Decision telemetry
+
+Each decision record associates the state observed by the policy with the action that was actually executed.
+
+Useful telemetry includes:
+
+- Battle identifier.
+- Turn number.
+- Legal actions.
+- Selected action ID.
+- Jev-selected action ID.
+- Selection source.
+- Jev probabilities.
+- Jev confidence.
+- Request attempt count.
+- HTTP status codes.
+- Request latency.
+- Model identifier.
+- Gateway generation identifier.
+
+Selection source is especially important. A battle containing fallback decisions should not be reported as a pure Jev-controlled battle.
+
+## Reliability
+
+The TypeSafe API may return transient errors such as:
+
+- `429 Too Many Requests`
+- `502 Bad Gateway`
+- `503 Service Unavailable`
+- `504 Gateway Timeout`
+- `529 Overloaded`
+
+The policy should:
+
+1. Serialize requests through a shared asynchronous client.
+2. Respect `Retry-After` when supplied.
+3. Use exponential backoff.
+4. Avoid unlimited rapid retries.
+5. Clearly record any fallback action.
+
+For untimed local experiments, the policy can wait until Jev succeeds. For practical or timed battles, use bounded retries followed by a deterministic fallback.
+
+## Current observations
+
+A small best-of-three experiment against `RandomPlayer` produced two Jev wins and one loss.
+
+The wins were decisive when high-powered attacks could immediately knock out opposing Pokémon. The loss exposed a longer-horizon weakness: a Mandibuzz using Toxic and Roost repeatedly recovered damage while residual poison wore down five of Jev’s Pokémon.
+
+This suggests that the current policy is effective at obvious immediate choices but lacks sufficient Pokémon-specific tactical context and temporal reasoning. Three battles are not enough to establish a reliable win rate.
+
+## Tests
+
+Run the test suite from `jev-showdown-lab` with the Python environment activated:
+
+```bash
+python -m pytest tests -q
+```
+
+Tests use mocked Jev responses and local fixtures; no API key or running Showdown server is required. Exporter tests require Node and Git and skip when either is unavailable. Description coverage includes six move categories, team and revealed opponent moves, forced switches, unavailable data, offline lookup, and JSON request and telemetry serialization.
+
+## Development roadmap
+
+Context will be introduced incrementally so that its effect can be measured.
+
+### V1 — Raw context
+
+- Current snapshot models
+- Legal moves and switches
+- Jev choice probabilities
+- Confidence and selection-source telemetry
+
+### V2 — Type context
+
+- Type effectiveness
+- STAB
+- Immunity and resistance labels
+
+### V3 — Effective power
+
+- Accuracy-adjusted effective power
+- Explicit comparison between attacking options
+
+### V4 — Damage context
+
+- Estimated damage range
+- Expected damage fraction
+- Knockout potential
+
+### V5 — Turn order
+
+- Effective speed
+- Move priority
+- Likely first mover
+
+### V6 — Switching
+
+- Entry-hazard damage
+- Defensive matchup
+- Offensive matchup after switching
+
+### V7 — Strategic moves
+
+- Recovery
+- Status effects
+- Stat boosts
+- Hazards
+- Protect-like moves
+- Pivoting and forced switching
+
+### V8 — Temporal context
+
+- Recent actions
+- HP changes
+- Repeated actions
+- Progress across turns
+- Recovery and residual-damage patterns
+
+### V9 — Lookahead
+
+- Plausible opponent responses
+- Best- and worst-case outcomes
+- Short rollout summaries
+- Jev selection over evaluated future positions
+
+Each version should be benchmarked independently instead of introducing every feature simultaneously.
+
+## Evaluation plan
+
+Initial opponents should include:
+
+- `RandomPlayer`
+- A maximum-base-power player
+- `SimpleHeuristicsPlayer`
+- Scripted matchup agents such as recovery or Toxic stall
+
+Recommended metrics include:
+
+- Win rate.
+- Pure-Jev win rate.
+- Jev decision coverage.
+- Fallback rate.
+- Average attempts per decision.
+- `429` and `503` rates.
+- Median and p95 request latency.
+- Average confidence.
+- Probability margin.
+- Invalid selections.
+- Decision performance by turn.
+
+A small number of battles is useful for debugging, but meaningful comparisons require substantially more games and consistent configurations.
+
+## Limitations
+
+- Jev is a hosted, stateless decision model.
+- Battle experience does not update Jev’s weights.
+- The current context does not yet include damage calculation or lookahead.
+- Randbats estimates may be stale, and generated-team sample frequencies do not model an opponent's move selection strategy.
+- Random battles introduce substantial team and matchup variance.
+- API availability can affect which policy actually controls a turn.
+- Jev confidence is not the probability that an action will win the battle.
+- Opponent information must remain limited to public or revealed information.
+- The project currently focuses on singles battles.
+
+## Long-term direction
+
+The intended long-term architecture combines:
+
+- Jev as a fast structured-action selector.
+- Pokémon-specific derived features.
+- A shallow lookahead system.
+- Persistent battle telemetry.
+- A locally trained value or reinforcement-learning policy.
+
+Jev could eventually act as a prior, teacher or high-level selector while a local model learns Pokémon-specific action values from battle outcomes.
+
+## References
+
+- [poke-env documentation](https://poke-env.readthedocs.io/)
+- [Pokémon Showdown](https://github.com/smogon/pokemon-showdown)
+- [TypeSafe API reference](https://docs.typesafe.ai/api)
+- [TypeSafe models](https://docs.typesafe.ai/models)
+- [TypeSafe AI](https://typesafe.ai/)

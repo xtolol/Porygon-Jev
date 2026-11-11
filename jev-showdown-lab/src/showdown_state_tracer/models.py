@@ -25,6 +25,7 @@ class MoveSnapshot:
     ignore_ability: bool = False
     
     is_protect_move: bool = False
+    short_description: str | None = None  # Gen 9 mechanics text, when available
 
 @dataclass(frozen=True, slots=True)
 class PokemonSnapshot:
@@ -41,6 +42,9 @@ class PokemonSnapshot:
     active: bool | None
     fainted: bool
     revealed: bool  # whether the opponent has seen this pokemon's species
+    revealed_tera_type: str | None = None  # only populated after terastallization
+    ability_short_description: str | None = None
+    item_short_description: str | None = None
     
 @dataclass(frozen=True, slots=True)
 class FieldSnapshot:
@@ -74,6 +78,35 @@ class MoveEffectiveness:
     effectiveness_multiplier: float | None
     effectiveness_label: str | None
 
+
+@dataclass(frozen=True, slots=True)
+class SwitchMatchup:
+    # A type-chart comparison only; it is not a damage or survival estimate.
+    source: str
+    multiplier: float
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class EntryHazard:
+    name: str
+    layers: int
+    exposure: Literal["present", "blocked_by_boots", "uncertain"]
+    reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class SwitchContext:
+    revealed_move_matchups: list[SwitchMatchup]
+    possible_stab_matchups: list[SwitchMatchup]
+    offensive_move_matchups: list[SwitchMatchup]
+    entry_hazards: list[EntryHazard]
+    active_boosts_lost: dict[str, int]
+    forced_switch: bool
+    consecutive_voluntary_switch_count: int
+    last_active_opponent_move_id: str | None
+    assumptions: list[str]
+
     
 @dataclass(frozen=True, slots=True)
 class ActionOption:
@@ -84,6 +117,7 @@ class ActionOption:
     move: MoveSnapshot | None = None
     switch: PokemonSnapshot | None = None
     move_effectiveness: MoveEffectiveness | None = None
+    switch_context: SwitchContext | None = None
 
 
 ActionOutcome = Literal[
@@ -106,6 +140,39 @@ class ActionMemorySnapshot:
     damage_fraction: float | None
     outcome: ActionOutcome
     known_target_ability: str | None
+    switch_from_species: str | None = None
+    switch_to_species: str | None = None
+    forced_switch: bool | None = None
+    switch_in_hp_before: float | None = None
+    switch_in_hp_after: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OpponentActionSnapshot:
+    turn: int
+    actor_species: str | None
+    action_type: Literal["move", "switch"]
+    move_id: str | None = None
+    switch_to_species: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PossibleMoveEstimate:
+    move_id: str
+    sampled_set_fraction: float
+
+
+@dataclass(frozen=True, slots=True)
+class OpponentSetEstimate:
+    species: str
+    status: Literal["available", "no_matching_sets", "unavailable"]
+    observed_move_ids: list[str]
+    possible_moves: list[PossibleMoveEstimate]
+    matching_set_count: int
+    sampled_set_count: int
+    omitted_move_count: int
+    source: str
+    data_retrieved_at: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,7 +183,9 @@ class DecisionSnapshot:
     legal_actions: list[ActionOption]
     forced_switch: bool
     recent_actions: list[ActionMemorySnapshot] = field(default_factory=list)
-    schema_version: int = 4
+    recent_opponent_actions: list[OpponentActionSnapshot] = field(default_factory=list)
+    opponent_set_estimate: OpponentSetEstimate | None = None
+    schema_version: int = 9
     
 @dataclass(frozen=True, slots=True)
 class DecisionRecord:

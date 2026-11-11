@@ -6,7 +6,11 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from showdown_state_tracer.models import ActionMemorySnapshot, ActionOption
+from poke_env.data import to_id_str
+
+from showdown_state_tracer.models import (
+    ActionMemorySnapshot, ActionOption, OpponentActionSnapshot,
+)
 
 if TYPE_CHECKING:
     from poke_env.battle import Battle
@@ -22,6 +26,11 @@ class _PendingAction:
     target_species: str | None
     target_hp_before: float | None
     known_target_ability: str | None
+    switch_from_species: str | None
+    switch_to_species: str | None
+    switch_target_key: str | None
+    switch_in_hp_before: float | None
+    forced_switch: bool | None
 
 
 @dataclass(slots=True)
@@ -29,6 +38,9 @@ class _BattleHistory:
     pending: _PendingAction | None = None
     recent: deque[ActionMemorySnapshot] = field(
         default_factory=lambda: deque(maxlen=3)
+    )
+    opponent_recent: deque[OpponentActionSnapshot] = field(
+        default_factory=lambda: deque(maxlen=6)
     )
 
 
@@ -47,6 +59,18 @@ class BattleMemory:
             ),
             None,
         )
+        switch_target = None
+        if action.type == "switch":
+            try:
+                index = int(action.id.split(":", 2)[1])
+                switch_target = battle.available_switches[index]
+            except (AttributeError, IndexError, ValueError):
+                # Synthetic callers can supply a switch snapshot without the list.
+                switch_target = None
+        switch_key = next(
+            (key for key, pokemon in battle.team.items() if pokemon is switch_target),
+            None,
+        ) if switch_target is not None else None
         self._battles.setdefault(battle.battle_tag, _BattleHistory()).pending = (
             _PendingAction(
                 turn=battle.turn,
@@ -59,6 +83,11 @@ class BattleMemory:
                 target_species=target.species if target else None,
                 target_hp_before=target.current_hp_fraction if target else None,
                 known_target_ability=target.ability if target else None,
+                switch_from_species=(battle.active_pokemon.species if action.type == "switch" and battle.active_pokemon else None),
+                switch_to_species=(switch_target.species if switch_target else action.switch.species if action.type == "switch" and action.switch else None),
+                switch_target_key=switch_key,
+                switch_in_hp_before=(switch_target.current_hp_fraction if switch_target else None),
+                forced_switch=(bool(battle.force_switch) if action.type == "switch" else None),
             )
         )
 
@@ -76,6 +105,10 @@ class BattleMemory:
             else None
         )
         hp_after = target.current_hp_fraction if target else None
+        switch_target = (
+            battle.team.get(pending.switch_target_key)
+            if pending.switch_target_key is not None else None
+        )
         damage = None
 
         if pending.action_type == "switch":
@@ -104,6 +137,13 @@ class BattleMemory:
                 if target and target.ability
                 else pending.known_target_ability
             ),
+            switch_from_species=pending.switch_from_species,
+            switch_to_species=pending.switch_to_species,
+            forced_switch=pending.forced_switch,
+            switch_in_hp_before=pending.switch_in_hp_before,
+            switch_in_hp_after=(
+                switch_target.current_hp_fraction if switch_target else None
+            ),
         )
         history.recent.append(observation)
         return observation
@@ -111,6 +151,26 @@ class BattleMemory:
     def recent_actions(self, battle_tag: str) -> list[ActionMemorySnapshot]:
         history = self._battles.get(battle_tag)
         return list(history.recent) if history else []
+
+    def observe_opponent_event(
+        self, battle_tag: str, turn: int, actor_species: str | None,
+        action_type: str, *, move_id: str | None = None,
+        switch_to_species: str | None = None,
+    ) -> None:
+        """Append each observed protocol action, including repeated move uses."""
+        if action_type not in {"move", "switch"}:
+            raise ValueError(f"Unknown opponent action: {action_type}")
+        self._battles.setdefault(battle_tag, _BattleHistory()).opponent_recent.append(
+            OpponentActionSnapshot(
+                turn=turn, actor_species=actor_species, action_type=action_type,
+                move_id=to_id_str(move_id) if move_id is not None else None,
+                switch_to_species=switch_to_species,
+            )
+        )
+
+    def recent_opponent_actions(self, battle_tag: str) -> list[OpponentActionSnapshot]:
+        history = self._battles.get(battle_tag)
+        return list(history.opponent_recent) if history else []
 
     def clear(self, battle_tag: str) -> None:
         self._battles.pop(battle_tag, None)
